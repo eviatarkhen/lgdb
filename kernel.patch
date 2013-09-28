@@ -1,0 +1,461 @@
+commit f917db08a0045e736e1625fa1f22d050333d0529
+Author: Eviatar Khen <eviatarkhen@gmail.com>
+Date:   Sat Sep 28 18:26:50 2013 +0200
+
+    lgdb modifications
+
+diff --git a/Documentation/virtual/lguest/lguest.c b/Documentation/virtual/lguest/lguest.c
+index 288dba6..115998a 100644
+--- a/Documentation/virtual/lguest/lguest.c
++++ b/Documentation/virtual/lguest/lguest.c
+@@ -19,6 +19,8 @@
+ #include <sys/stat.h>
+ #include <sys/wait.h>
+ #include <sys/eventfd.h>
++#include <sys/un.h>
++#include <sys/socket.h>
+ #include <fcntl.h>
+ #include <stdbool.h>
+ #include <errno.h>
+@@ -782,13 +784,19 @@ static void add_used_and_trigger(struct virtqueue *vq, unsigned head, int len)
+ /*
+  * The Console
+  *
+- * We associate some data with the console for our exit hack.
++ * We associate some data with the console for our exit hack as well as for debugger support
+  */
+ struct console_abort {
+-	/* How many times have they hit ^C? */
+-	int count;
+-	/* When did they start? */
+-	struct timeval start;
++    /* How many times have they hit ^C? */
++    int count;
++    /* When did they start? */
++    struct timeval start;
++};
++
++struct virtserial_info {
++  struct virtqueue *in_vq, *out_vq;
++  int debug_socket;
++  struct console_abort abort;
+ };
+ 
+ /* This is the routine which handles console input (ie. stdin). */
+@@ -796,7 +804,7 @@ static void console_input(struct virtqueue *vq)
+ {
+ 	int len;
+ 	unsigned int head, in_num, out_num;
+-	struct console_abort *abort = vq->dev->priv;
++	struct console_abort *abort = &((struct virtserial_info*)vq->dev->priv)->abort;
+ 	struct iovec iov[vq->vring.num];
+ 
+ 	/* Make sure there's a descriptor available. */
+@@ -874,6 +882,145 @@ static void console_output(struct virtqueue *vq)
+ 	add_used(vq, head, 0);
+ }
+ 
++/* This is the routine which handles debugger input. */
++static void debug_input(struct virtqueue *vq)
++{
++	int len,i;
++	unsigned int head, in_num, out_num;
++	struct virtserial_info *vinfo = vq->dev->priv;
++	struct iovec iov[vq->vring.num];
++
++	/* Make sure there's a descriptor available. */
++	head = wait_for_vq_desc(vq, iov, &out_num, &in_num);
++	if (out_num)
++		errx(1, "Output buffers in console in queue?");
++
++	/* Read into it.  This is where we usually wait. */
++	len = readv(vinfo->debug_socket, iov, in_num);
++	//fprintf(stderr, "Host writes: ");
++	for(i=0; i < in_num; i++)
++	  write(2, iov[i].iov_base, iov[i].iov_len);
++      
++	//fprintf(stderr, " - host input size %d\n", len);
++	if (len <= 0) {
++		/* Ran out of input? */
++		warnx("Failed to get debugger input, ignoring debugger.");
++		/*
++		 * For simplicity, dying threads kill the whole Launcher.  So
++		 * just nap here.
++		 */
++		for (;;)
++			pause();
++	}
++
++	/* Tell the Guest we used a buffer. */
++	add_used_and_trigger(vq, head, len);
++}
++
++/* This is the routine which handles debugger output (ie. stdout). */
++static void debug_output(struct virtqueue *vq)
++{
++	unsigned int head, out, in;
++	struct iovec iov[vq->vring.num];
++
++	/* We usually wait in here, for the Guest to give us something. */
++	head = wait_for_vq_desc(vq, iov, &out, &in);
++	if (in)
++		errx(1, "Input buffers in console output queue?");
++
++	/* writev can return a partial write, so we loop here. */
++	
++	while (!iov_empty(iov, out)) {
++		//fprintf(stderr, "Client writes: ");
++		writev(2, iov, out);
++		int len = writev(((struct virtserial_info*)vq->dev->priv)->debug_socket, iov, out);
++		//fprintf(stderr, " - client input size %d\n", len);
++		if (len <= 0)
++			err(1, "Write to stdout gave %i", len);
++		iov_consume(iov, out, len);
++	}
++
++	/*
++	 * We're finished with that buffer: if we're going to sleep,
++	 * wait_for_vq_desc() will prod the Guest with an interrupt.
++	 */
++	add_used(vq, head, 0);
++}
++
++static void send_serial_control(struct virtserial_info* vserial, __u32 port, __u16 control, __u16 value)
++{
++	unsigned int head, out_num, in_num;
++	struct virtio_console_control *in;
++	struct iovec iov[vserial->in_vq->vring.num];
++	//fprintf(stderr, "Still alive!\n");
++
++	/*
++	 * Get the next request, where we normally wait.  It triggers the
++	 * interrupt to acknowledge previously serviced requests (if any).
++	 */
++	head = wait_for_vq_desc(vserial->in_vq, iov, &out_num, &in_num);
++
++	/*
++	 * Every control message should contain exactly one input buffer and no output buffers
++	 */
++	if (in_num != 1 || out_num != 0)
++		errx(1, "Bad virtserial response buffer %u out=%u in=%u",
++		     head, out_num, in_num);
++
++	in = _convert((&iov[0]), 4096, __alignof__(struct virtio_console_control), "struct virtio_console_control");
++	in->id = port; in->event=control; in->value = value;
++	//fprintf(stderr, "Sending Virtserial response %d on port %d with data %d\n", in->event, in->id, in->value); 
++
++	/* Finished that request. */
++	add_used_and_trigger(vserial->in_vq, head, sizeof(*in));
++
++}
++
++static void virtserial_control_respond(struct virtqueue *vq)
++{
++  static const int CONSOLE_IDX=0, DEBUG_IDX=1;
++        struct virtserial_info *vserial = vq->dev->priv;
++	unsigned int head, out_num, in_num;
++	struct virtio_console_control *out;
++	struct iovec iov[vq->vring.num];
++
++	/*
++	 * Get the next request, where we normally wait.  It triggers the
++	 * interrupt to acknowledge previously serviced requests (if any).
++	 */
++	head = wait_for_vq_desc(vq, iov, &out_num, &in_num);
++
++	/*
++	 * Every control message should contain exactly one output buffer and no input buffers
++	 */
++	if (out_num != 1 || in_num != 0)
++		errx(1, "Bad virtserial cmd %u out=%u in=%u",
++		     head, out_num, in_num);
++
++	out = convert(&iov[0], struct virtio_console_control);
++	//fprintf(stderr, "Virtserial event %d on port %d with data %d\n", out->event, out->id, out->value); 
++	switch(out->event) {
++	case VIRTIO_CONSOLE_DEVICE_READY:
++	  send_serial_control(vserial, CONSOLE_IDX, VIRTIO_CONSOLE_PORT_ADD, 0);
++	  if(vserial->debug_socket != -1)
++	    send_serial_control(vserial, DEBUG_IDX, VIRTIO_CONSOLE_PORT_ADD, 0);
++	  break;
++	case VIRTIO_CONSOLE_PORT_READY:
++	  if(out->id == CONSOLE_IDX || out->id == DEBUG_IDX)
++	    send_serial_control(vserial, out->id, VIRTIO_CONSOLE_CONSOLE_PORT, 1);
++	  send_serial_control(vserial, out->id, VIRTIO_CONSOLE_PORT_OPEN, 1);
++	  break;
++	}
++
++	/* Finished that request. */
++	add_used(vq, head, 0);
++}
++
++static void virtserial_control_feed(struct virtqueue *vq)
++{
++  //fprintf(stderr, "virtserial_control_respond called");
++}
++
+ /*
+  * The Network
+  *
+@@ -1094,10 +1241,9 @@ static void update_device_status(struct device *dev)
+ 		warnx("Device %s configuration FAILED", dev->name);
+ 		if (dev->running)
+ 			reset_device(dev);
+-	} else {
+-		if (dev->running)
+-			err(1, "Device %s features finalized twice", dev->name);
+-		start_device(dev);
++	} else if (dev->desc->status & VIRTIO_CONFIG_S_DRIVER_OK) {
++		if (!dev->running)
++			start_device(dev);
+ 	}
+ }
+ 
+@@ -1126,7 +1272,11 @@ static void handle_output(unsigned long addr)
+ 		for (vq = i->vq; vq; vq = vq->next) {
+ 			if (addr != vq->config.pfn*getpagesize())
+ 				continue;
+-			errx(1, "Notification on %s before setup!", i->name);
++			if (i->running)
++				errx(1, "Notification on running %s", i->name);
++			/* This just calls create_thread() for each virtqueue */
++			start_device(i);
++			return;
+ 		}
+ 	}
+ 
+@@ -1316,13 +1466,57 @@ static struct device *new_device(const char *name, u16 type)
+ 	return dev;
+ }
+ 
++static int open_debug_socket(const char* debug_path)
++{
++  int main_socket, connection, len; socklen_t t;
++  struct sockaddr_un local, remote;
++  if(strlen(debug_path) >= sizeof(local.sun_path)) {
++    warnx("Path too long!");
++    return -1;
++  }
++
++  if ((main_socket = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
++    warnx("No debugger socket created");
++    return -1;
++  }
++  
++  local.sun_family = AF_UNIX;
++  strcpy(local.sun_path, debug_path);
++  unlink(local.sun_path);
++  len = strlen(local.sun_path) + sizeof(local.sun_family);
++  if (bind(main_socket, (struct sockaddr *)&local, len) == -1) {
++    close(main_socket);
++    warnx("Binding failed");
++    return -1;
++  }
++  
++  if (listen(main_socket, 1) == -1) {
++    close(main_socket);
++    warnx("Listening failed");
++    return -1;
++  }
++  
++  printf("Waiting for debugger connection on host side...\n");
++  t = sizeof(remote);
++  if ((connection = accept(main_socket, (struct sockaddr *)&remote, &t)) == -1) {
++    close(main_socket);
++    warnx("Connection rejected!");
++    return -1;
++  }
++  printf("Debugger connected.\n");
++  close(main_socket);
++  return connection;
++}
++
+ /*
+  * Our first setup routine is the console.  It's a fairly simple device, but
+  * UNIX tty handling makes it uglier than it could be.
+  */
+-static void setup_console(void)
++static void setup_console(const char* debug_path)
+ {
+ 	struct device *dev;
++	struct virtserial_info *priv;
++	struct virtio_console_config conf = { .cols = 40, .rows = 20, .max_nr_ports = 1 };
+ 
+ 	/* If we can save the initial standard input settings... */
+ 	if (tcgetattr(STDIN_FILENO, &orig_term) == 0) {
+@@ -1338,8 +1532,11 @@ static void setup_console(void)
+ 	dev = new_device("console", VIRTIO_ID_CONSOLE);
+ 
+ 	/* We store the console state in dev->priv, and initialize it. */
+-	dev->priv = malloc(sizeof(struct console_abort));
+-	((struct console_abort *)dev->priv)->count = 0;
++	priv = dev->priv = malloc(sizeof(struct virtserial_info));
++	priv->abort.count = 0;
++	priv->debug_socket = debug_path ? open_debug_socket(debug_path) : -1;
++	if(priv->debug_socket != -1)
++	  conf.max_nr_ports++;
+ 
+ 	/*
+ 	 * The console needs two virtqueues: the input then the output.  When
+@@ -1349,6 +1546,19 @@ static void setup_console(void)
+ 	 */
+ 	add_virtqueue(dev, VIRTQUEUE_NUM, console_input);
+ 	add_virtqueue(dev, VIRTQUEUE_NUM, console_output);
++	add_virtqueue(dev, VIRTQUEUE_NUM, virtserial_control_feed);
++	add_virtqueue(dev, VIRTQUEUE_NUM, virtserial_control_respond);
++	if(priv->debug_socket != -1) {
++	  add_virtqueue(dev, VIRTQUEUE_NUM, debug_input);
++	  add_virtqueue(dev, VIRTQUEUE_NUM, debug_output);
++	}
++	priv->in_vq = dev->vq->next->next;
++	priv->out_vq = dev->vq->next->next->next;
++
++	//add_virtqueue(dev, 
++	add_feature(dev, VIRTIO_CONSOLE_F_SIZE);
++	add_feature(dev, VIRTIO_CONSOLE_F_MULTIPORT);
++	set_config(dev, sizeof(conf), &conf);
+ 
+ 	verbose("device %u: console\n", ++devices.device_num);
+ }
+@@ -1855,13 +2065,14 @@ static struct option opts[] = {
+ 	{ "initrd", 1, NULL, 'i' },
+ 	{ "username", 1, NULL, 'u' },
+ 	{ "chroot", 1, NULL, 'c' },
++	{ "debug", 1, NULL, 'd' },
+ 	{ NULL },
+ };
+ static void usage(void)
+ {
+ 	errx(1, "Usage: lguest [--verbose] "
+ 	     "[--tunnet=(<ipaddr>:<macaddr>|bridge:<bridgename>:<macaddr>)\n"
+-	     "|--block=<filename>|--initrd=<filename>]...\n"
++	     "|--block=<filename>|--initrd=<filename>]|--debug=<debug-local-socket>...\n"
+ 	     "<mem-in-mb> vmlinux [args...]");
+ }
+ 
+@@ -1877,6 +2088,9 @@ int main(int argc, char *argv[])
+ 	/* If they specify an initrd file to load. */
+ 	const char *initrd_name = NULL;
+ 
++	/* If they specify debug socket path to listen on. */
++	const char *debug_path = NULL;
++
+ 	/* Password structure for initgroups/setres[gu]id */
+ 	struct passwd *user_details = NULL;
+ 
+@@ -1947,6 +2161,9 @@ int main(int argc, char *argv[])
+ 		case 'c':
+ 			chroot_path = optarg;
+ 			break;
++		case 'd':
++			debug_path = optarg;
++			break;
+ 		default:
+ 			warnx("Unknown argument %s", argv[optind]);
+ 			usage();
+@@ -1962,7 +2179,7 @@ int main(int argc, char *argv[])
+ 	verbose("Guest base is at %p\n", guest_base);
+ 
+ 	/* We always have a console device */
+-	setup_console();
++	setup_console(debug_path);
+ 
+ 	/* Now we load the kernel */
+ 	start = load_kernel(open_or_die(argv[optind+1], O_RDONLY));
+diff --git a/arch/x86/lguest/boot.c b/arch/x86/lguest/boot.c
+index cf4603b..3721a1d 100644
+--- a/arch/x86/lguest/boot.c
++++ b/arch/x86/lguest/boot.c
+@@ -1051,6 +1051,12 @@ static void lguest_load_sp0(struct tss_struct *tss,
+ }
+ 
+ /* Let's just say, I wouldn't do debugging under a Guest. */
++static unsigned long  lguest_get_debugreg(int regno)
++{
++	/* FIXME: Implement */
++	return 0;
++}
++
+ static void lguest_set_debugreg(int regno, unsigned long value)
+ {
+ 	/* FIXME: Implement */
+@@ -1298,6 +1304,7 @@ __init void lguest_init(void)
+ 	pv_cpu_ops.load_tr_desc = lguest_load_tr_desc;
+ 	pv_cpu_ops.set_ldt = lguest_set_ldt;
+ 	pv_cpu_ops.load_tls = lguest_load_tls;
++	pv_cpu_ops.get_debugreg = lguest_get_debugreg;
+ 	pv_cpu_ops.set_debugreg = lguest_set_debugreg;
+ 	pv_cpu_ops.clts = lguest_clts;
+ 	pv_cpu_ops.read_cr0 = lguest_read_cr0;
+diff --git a/debian.master/config/enforce b/debian.master/config/enforce
+index 4da41d5..775625b 100644
+--- a/debian.master/config/enforce
++++ b/debian.master/config/enforce
+@@ -16,7 +16,7 @@ value CONFIG_DEFAULT_SECURITY_APPARMOR y
+ !exists CONFIG_SECCOMP | value CONFIG_SECCOMP y
+ !exists CONFIG_HAVE_ARCH_SECCOMP_FILTER | value CONFIG_SECCOMP_FILTER y
+ !exists CONFIG_CC_STACKPROTECTOR | value CONFIG_CC_STACKPROTECTOR y
+-!exists CONFIG_DEBUG_RODATA | value CONFIG_DEBUG_RODATA y
++#!exists CONFIG_DEBUG_RODATA | value CONFIG_DEBUG_RODATA y
+ !exists CONFIG_DEBUG_SET_MODULE_RONX | value CONFIG_DEBUG_SET_MODULE_RONX y
+ !exists CONFIG_STRICT_DEVMEM | value CONFIG_STRICT_DEVMEM y
+ # For architectures which support this option ensure it is disabled.
+diff --git a/drivers/lguest/interrupts_and_traps.c b/drivers/lguest/interrupts_and_traps.c
+index 28433a1..aa39db8 100644
+--- a/drivers/lguest/interrupts_and_traps.c
++++ b/drivers/lguest/interrupts_and_traps.c
+@@ -140,6 +140,16 @@ static void set_guest_interrupt(struct lg_cpu *cpu, u32 lo, u32 hi,
+ 	cpu->regs->eip = idt_address(lo, hi);
+ 
+ 	/*
++	 * Trapping always clears these flags:
++	 * TF: Trap flag
++	 * VM: Virtual 8086 mode
++	 * RF: Resume
++	 * NT: Nested task
++	 */
++	cpu->regs->eflags &=
++	    ~(X86_EFLAGS_TF|X86_EFLAGS_VM|X86_EFLAGS_RF|X86_EFLAGS_NT);
++
++	/*
+ 	 * There are two kinds of interrupt handlers: 0xE is an "interrupt
+ 	 * gate" which expects interrupts to be disabled on entry.
+ 	 */
+diff --git a/drivers/lguest/page_tables.c b/drivers/lguest/page_tables.c
+index 3b62be16..b3a094e 100644
+--- a/drivers/lguest/page_tables.c
++++ b/drivers/lguest/page_tables.c
+@@ -642,8 +642,10 @@ unsigned long guest_pa(struct lg_cpu *cpu, unsigned long vaddr)
+ 
+ #ifdef CONFIG_X86_PAE
+ 	gpmd = lgread(cpu, gpmd_addr(gpgd, vaddr), pmd_t);
+-	if (!(pmd_flags(gpmd) & _PAGE_PRESENT))
++	if (!(pmd_flags(gpmd) & _PAGE_PRESENT)) {
+ 		kill_guest(cpu, "Bad address %#lx", vaddr);
++		return -1UL;
++	}
+ 	gpte = lgread(cpu, gpte_addr(cpu, gpmd, vaddr), pte_t);
+ #else
+ 	gpte = lgread(cpu, gpte_addr(cpu, gpgd, vaddr), pte_t);
+diff --git a/drivers/tty/hvc/hvc_console.c b/drivers/tty/hvc/hvc_console.c
+index b6b2d18..cdcc26a 100644
+--- a/drivers/tty/hvc/hvc_console.c
++++ b/drivers/tty/hvc/hvc_console.c
+@@ -775,7 +775,7 @@ int hvc_poll_init(struct tty_driver *driver, int line, char *options)
+ 
+ static int hvc_poll_get_char(struct tty_driver *driver, int line)
+ {
+-	struct tty_struct *tty = driver->ttys[0];
++	struct tty_struct *tty = driver->ttys[line];
+ 	struct hvc_struct *hp = tty->driver_data;
+ 	int n;
+ 	char ch;
+@@ -790,7 +790,7 @@ static int hvc_poll_get_char(struct tty_driver *driver, int line)
+ 
+ static void hvc_poll_put_char(struct tty_driver *driver, int line, char ch)
+ {
+-	struct tty_struct *tty = driver->ttys[0];
++	struct tty_struct *tty = driver->ttys[line];
+ 	struct hvc_struct *hp = tty->driver_data;
+ 	int n;
+ 
