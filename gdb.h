@@ -1,4 +1,4 @@
-/* Main function lgdb.
+/* Main interface for LGDB(lguest gdb) the virtualization based debugger
    Copyright (C) 2012, 2007-2012 Eviatar Khen Technologies, Inc.
 
    This file is part of LGDB.
@@ -16,17 +16,9 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include <string.h>
-#include <unistd.h>
-#include "main.h"
+#ifndef GDB_H
+#define GDB_H
 
-int
-main (int argc, char** argv)
-{
-	struct main_args args;
+extern void gdb_init(char *kernel, char *pts);
 
-	memset(&args, 0, sizeof(args));
-	args.argc = argc;
-	args.argv = argv;
-	return lgdb_main(&args);
-}
+#endif 

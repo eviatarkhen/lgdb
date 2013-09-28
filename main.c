@@ -19,6 +19,7 @@
 #include "defs.h"
 #include "main.h"
 #include "lgdb_cli.h"
+#include "gdb.h"
 
 #include <getopt.h>
 
@@ -58,6 +59,7 @@ captured_main(void *data)
 	instream = stdin;
 
 	char pts[10] = "/dev/pts/";
+	char kernel[500] = {'\0'};
 
 	/* Parse arguments */
 	int c;
@@ -66,6 +68,7 @@ captured_main(void *data)
 		{"help", 0, NULL, 'h'},
 		{"version", 0, NULL, 'v'},
 		{"pts", 1, NULL, 'p'},
+		{"kernel", 1, NULL, 'k'},
 		{NULL}
 	};
 
@@ -81,6 +84,9 @@ captured_main(void *data)
 		case 'p':
 			strcat(pts, optarg);
 			break;
+		case 'k':
+			strcat(kernel, optarg);
+			break;
 		default:
 			fprintf(lgdb_stderr, "LgDb: Use %s --help for a complete list of options.\n", argv[0]);
 			exit(0);
@@ -91,6 +97,10 @@ captured_main(void *data)
 		fprintf(lgdb_stderr, "LgDb: /dev/pts must be given\n");
 		exit(0);	
 	}
+	if (strlen(kernel) == 0) {
+		fprintf(lgdb_stderr, "LgDb: path to kernel binary must be given\n");
+		exit(0);	
+	}
 
 	/* Any arguments left on the command lineis unexpected and would be ignored */
 	if (optind < argc)
@@ -99,6 +109,7 @@ captured_main(void *data)
 	print_lgdb_version();
 	
 	lgdb_init();
+	gdb_init(kernel, pts);
 
 	start_cli();
 
