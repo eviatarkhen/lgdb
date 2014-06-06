@@ -1,5 +1,5 @@
-/* Basic definitions for LGDB(lguest gdb) the virtualization based debugger
-   Copyright (C) 2012, 2011-2012 Eviatar Khen Technologies, Inc.
+/* Main interface for LGDB(lguest gdb) the virtualization based debugger
+   Copyright (C) 2012, 2007-2012 Eviatar Khen Technologies, Inc.
 
    This file is part of LGDB.
 
@@ -16,16 +16,14 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#ifndef DEFS_H
-#define DEFS_H
+#ifndef PROFILER_H
+#define PROFILERB_H
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+extern void prof_init();
 
-#define VERSION "1.0.0"
+extern int prof_create_wallet();
+extern int prof_delete_wallet(int wallet);
 
-#define PROF_MAX_WALLETS 10
-#define PROF_MAX_SCOPES 10
-
+extern int prof_add_scope(int wallet, char *start, char* end);
+extern int prof_remove_scope(int wallet, int scope);
 #endif 
