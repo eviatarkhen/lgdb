@@ -20,5 +20,7 @@
 #define GDB_H
 
 extern void gdb_init(char *kernel, char *pts);
+extern void gdb_add_bp(char *);
+extern void gdb_remove_bp(char *);
 
 #endif 

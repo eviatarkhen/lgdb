@@ -123,3 +123,11 @@ gdb_init(char *kernel, char *pts)
 	send_command(command);
 	
 }
+
+void gdb_add_bp(char *bp)
+{
+}
+
+void gdb_remove_bp(char *bp)
+{
+}

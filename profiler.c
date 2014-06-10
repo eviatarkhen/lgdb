@@ -18,6 +18,7 @@
 
 #define _GNU_SOURCE
 #include <sys/time.h>
+#include <search.h>
 
 #include "profiler.h"
 #include "gdb.h"
@@ -29,18 +30,18 @@ typedef struct prof_scope
 	char *end;
 	unsigned int used;
 	unsigned long long charge;
-	struct_tv start_time;
-} prof_scope;
+	struct timeval start_time;
+} prof_scope_t;
 
 typedef struct wallet
 {
 	unsigned int used;
 	unsigned int num_of_scopes;
 	unsigned long long charge;
-	prof_scope scopes[PROF_MAX_SCOPES];
-} wallet;
+	prof_scope_t scopes[PROF_MAX_SCOPES];
+} wallet_t;
 
-static wallet wallets[PROF_MAX_WALLETS];
+static wallet_t wallets[PROF_MAX_WALLETS];
 static int num_of_wallets;
 
 void prof_init()
@@ -75,8 +76,9 @@ void prof_delete_wallet(int wallet)
 
 int prof_add_scope(int wallet, char *start, char* end)
 {
-	wallet *w = NULL;
+	wallet_t *w = NULL;
 	ENTRY e, *ep;
+	unsigned int i;
 
 	if (wallet < 0 || wallet >= PROF_MAX_WALLETS)
 		return -1;
@@ -103,8 +105,10 @@ int prof_add_scope(int wallet, char *start, char* end)
 	e.data  = (void *) i;
 
 	/* TODO add this to global hash */
+	(void)e;
+	(void)ep;
 
-	gdb_add_bp(start)
+	gdb_add_bp(start);
 	gdb_add_bp(end);
 
 	return i;
@@ -112,6 +116,8 @@ int prof_add_scope(int wallet, char *start, char* end)
 
 int prof_remove_scope(int wallet, int scope)
 {
+	wallet_t *w = NULL;
+
 	if (wallet < 0 || wallet >= PROF_MAX_WALLETS)
 		return -1;
 
@@ -123,9 +129,9 @@ int prof_remove_scope(int wallet, int scope)
 	if (scope < 0 || scope >= PROF_MAX_SCOPES)
 		return -1;
 
-	w->scopes[scope].used = 0.
+	w->scopes[scope].used = 0;
 
-	gdb_remove_bp(w->scopes[scope].start)
+	gdb_remove_bp(w->scopes[scope].start);
 	gdb_remove_bp(w->scopes[scope].end);
 
 	return 0;
