@@ -20,8 +20,11 @@
 #include "main.h"
 #include "lgdb_cli.h"
 #include "gdb.h"
+#include "lgdb_logger.h"
 
 #include <getopt.h>
+#include <string.h>
+#include <unistd.h>
 
 FILE *lgdb_stdout;
 FILE *lgdb_stderr;
@@ -42,6 +45,7 @@ lgdb_init(void)
 {
 	cmdlist = NULL;
 	init_cli_cmds();
+	init_logger();
 }
 
 static int
@@ -58,7 +62,7 @@ captured_main(void *data)
 
 	instream = stdin;
 
-	char pts[10] = "/dev/pts/";
+	char pts[10] = {'\0'};
 	char kernel[500] = {'\0'};
 
 	/* Parse arguments */
@@ -88,17 +92,18 @@ captured_main(void *data)
 			strcat(kernel, optarg);
 			break;
 		default:
-			fprintf(lgdb_stderr, "LgDb: Use %s --help for a complete list of options.\n", argv[0]);
+			fprintf(lgdb_stderr, "LgDb: Unknown option. Use %s --help for a complete list of options.\n", argv[0]);
 			exit(0);
 		}
 	} 
 
-	if (strlen(pts) == strlen("/dev/pts/")) {
-		fprintf(lgdb_stderr, "LgDb: /dev/pts must be given\n");
+	if (access(pts, F_OK) == -1) {
+		fprintf(lgdb_stderr, "LgDb:  pseudo ternimal %s does not exists.\n", pts);
 		exit(0);	
 	}
-	if (strlen(kernel) == 0) {
-		fprintf(lgdb_stderr, "LgDb: path to kernel binary must be given\n");
+
+	if (access(kernel, F_OK) == -1) {
+		fprintf(lgdb_stderr, "LgDb:  kernel binary %s does not exists.\n", kernel);
 		exit(0);	
 	}
 

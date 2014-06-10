@@ -24,21 +24,39 @@
 #include <string.h>
 
 #include "gdb.h"
+#include "lgdb_logger.h"
 
-int outfd[2];
-int infd[2];
+static int outfd[2];
+static int infd[2];
+
+static pid_t pid;
+
+static void send_command(char *command)
+{
+	lgdb_print(LOG_DBG, "Sending command \"%s\" to gdb\n", command);
+
+	strcat(command, "\n");
+	if (write(infd[1], command, strlen(command)) < 0) {
+		perror("write");
+		close(infd[1]);
+		close(outfd[0]);
+		exit(-8);
+	}
+}
 
 void gdb_close()
 {
 	close(infd[1]);
 	close(outfd[0]);
+	
+	kill(pid, SIGTERM);
 }
+
+//TODO: add SIGCLD handler
 
 void
 gdb_init(char *kernel, char *pts)
 {
-	pid_t pid;
-
 	if (pipe(infd) < 0) {
 		perror("pipe: infd");
 		exit(-2);
@@ -91,12 +109,17 @@ gdb_init(char *kernel, char *pts)
 	close(infd[0]);
 	close(outfd[1]);
 
-	char command[100] = "remote target";
-	sprintf(command, "%s %s\n", command, pts);
-	if (write(infd[1], command, strlen(command)) < 0) {
-		perror("write");
-		close(infd[1]);
-		close(outfd[0]);
-		exit(-8);
-	}
+	sleep(5);
+	char command[100];
+
+	memset(command, 0, sizeof(command));
+	sprintf(command, "%s", "set logging on");
+
+	send_command(command);
+
+	memset(command, 0, sizeof(command));
+	sprintf(command, "%s %s", "target remote", pts);
+
+	send_command(command);
+	
 }

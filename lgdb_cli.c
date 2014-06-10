@@ -48,7 +48,7 @@ void
 print_lgdb_version(void)
 {
         fprintf(lgdb_stdout, "LGDB %s\n"
-                             "Copyright (C) 2012, 2011-2012 Eviatar Khen Technologies, Inc.\n"
+                             "Copyright (C) 2012, 2011-2014 Eviatar Khen Technologies, Inc.\n"
                              "This program is free software; you can redistribute it and/or modify\n"
                              "it under the terms of the GNU General Public License as published by\n"
                              "the Free Software Foundation; either version 3 of the License, or\n"
@@ -61,10 +61,11 @@ print_lgdb_help(void)
         fprintf(lgdb_stdout, "This is LGDB. Usage: \n\n"
                              "    lgdb [options] add-more-here\n\n"
                              "Options:\n\n"
-                             "  --version               Print version informationand then exit.\n"
-                             "  --help          	Print this message.\n\n"
-                             "  --pts          		pseodu terminal number.\n\n\n"
-                             "For more information go to www.scipio.org/lgdb.\n\n");
+                             "  --version	Print version informationand then exit.\n"
+                             "  --help	Print this message.\n"
+                             "  --pts		pseodu terminal number.\n"
+                             "  --kernel	kernel binary.\n\n"
+                             "For more information go to https://github/eviatarkhen/lgdb\n\n");
 }
 
 void
@@ -73,19 +74,16 @@ add_cmd(char *name, void (*func) (char *,int), char *doc, struct cmd_list_elemen
 	struct cmd_list_element *c = (struct cmd_list_element *) malloc(sizeof(struct cmd_list_element));
 	struct cmd_list_element *p;
 
-	if ( !c )
-	{
+	if ( !c ) {
 		fprintf(lgdb_stderr, "malloc fail with cmd: %s\n", name);
 		return;
 	}
 
-	if ( *list == NULL )
-	{
+	if ( *list == NULL ) {
 		c->next = *list;
 		*list = c;
 	}
-	else
-	{
+	else {
 		p = *list;
 		while ( p->next )
 			p = p->next;
@@ -138,12 +136,9 @@ find_cmd(char *command, int len, struct cmd_list_element *clist)
 
 	found = (struct cmd_list_element *) NULL;
 
-	for (found = clist; found; found = found->next)
-	{
+	for (found = clist; found; found = found->next) {
 		if (!strncmp(command, found->name, len) && found->function )
-		{
 			break;
-		}
 	}
 
 	return found;
@@ -173,10 +168,8 @@ lookup_cmd(char **line, struct cmd_list_element *clist)
 	found = find_cmd(command, len, clist);	
 
 	/* If was found, lower case the command and search again */
-	if ( !found )
-	{
-		for (tmp = 0; tmp < len; tmp++)
-		{
+	if ( !found ) {
+		for (tmp = 0; tmp < len; tmp++) {
 			char x = command[tmp];
 
 			command[tmp] = isupper(x) ? tolower(x) : x; 
@@ -203,14 +196,12 @@ execute_command(char *p, int from_stdin)
 	while ( *p == ' ' || *p == '\t' )
 		++p;
 
-	if ( *p )
-	{
+	if ( *p ) {
 		char *args;
 	
 		c = lookup_cmd(&p, cmdlist);
 
-		if ( c && c->function )
-		{
+		if ( c && c->function ) {
 			/* Pass null arg rather than an empty one*/
 			args = *p ? p : 0;
 
@@ -223,8 +214,7 @@ execute_command(char *p, int from_stdin)
 static void
 command_handler(char *command)
 {
-	if ( command == 0 )
-	{
+	if ( command == 0 ) {
 		fprintf(lgdb_stdout, "quit\n");
 		execute_command("quit", stdin == instream);
 	}
@@ -243,12 +233,10 @@ command_line_handler(char *rl)
 	char *nline;
 	//char got_eof = 0;
 
-	if ( linebuffer == 0 )
-	{
+	if ( linebuffer == 0 ) {
 		linelength = 80;
 		linebuffer = (char *)malloc(linelength);
-		if ( !linebuffer )
-		{
+		if ( !linebuffer ) {
 			perror("command_line_handler: malloc");
 			return;
 		}
@@ -256,27 +244,23 @@ command_line_handler(char *rl)
 
 	p = linebuffer;
 
-	if ( more_to_come )
-	{
+	if ( more_to_come ) {
 		 strcpy (linebuffer, readline_input_state.linebuffer);
 		 p = readline_input_state.linebuffer_ptr;
 		 free (readline_input_state.linebuffer);
 		 more_to_come = 0;
 	}
 
-	if ( !rl || rl == (char *)EOF )
-	{
+	if ( !rl || rl == (char *)EOF ) {
 	//	got_eof = 1;
 		command_handler(0);
 		return;
 	}
 
-	if ( strlen(rl) + 1 + (p - linebuffer) > linelength )
-	{
+	if ( strlen(rl) + 1 + (p - linebuffer) > linelength ) {
 		linelength = strlen(rl) + 1 + (p - linebuffer);
 		nline = (char *)realloc(linebuffer, linelength);
-		if ( !nline )
-		{
+		if ( !nline ) {
 			perror("command_line_handler: realloc");
 			return;
 		}
@@ -292,8 +276,7 @@ command_line_handler(char *rl)
 
 	free(rl); /* this was allocated at readline */
 	
-	if (p > linebuffer && *(p - 1) == '\\')
-	{
+	if (p > linebuffer && *(p - 1) == '\\') {
 		*p = '\0';
 		p--;                      /* Put on top of '\'.  */
 
@@ -309,8 +292,7 @@ command_line_handler(char *rl)
 	}
 
 	/* If we just got an empty line, do nothing - maybe in the future, repeat the last command */
-	if ( p == linebuffer && *p != '\\')
-	{
+	if ( p == linebuffer && *p != '\\') {
 		//command_handler(saved_command_line);
 		display_lgdb_prompt (0);
 		return;
@@ -320,8 +302,7 @@ command_line_handler(char *rl)
 	for (p1 = linebuffer; *p1 == ' ' || *p1 == '\t'; p1++);
 
 	// if empty - do nothing
-	if ( !*p1 )
-	{
+	if ( !*p1 ) {
 		//command_handler(saved_command_line);
 		display_lgdb_prompt (0);
 		return;
