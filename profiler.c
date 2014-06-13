@@ -55,7 +55,7 @@ int prof_create_wallet()
 	if (num_of_wallets == PROF_MAX_WALLETS)
 		return -1;
 	
-	for (i = 0; i < PROF_MAX_WALLETS  || !wallets[i].used ; ++i);
+	for (i = 0; i < PROF_MAX_WALLETS  && wallets[i].used ; ++i);
 		
 	++num_of_wallets;
 	wallets[i].used = 1;
@@ -63,14 +63,16 @@ int prof_create_wallet()
 	return i;
 }
 
-void prof_delete_wallet(int wallet)
+int prof_delete_wallet(int wallet)
 {
 	if (wallet < 0 || wallet >= PROF_MAX_WALLETS)
-		return;
+		return -1;
 
 	wallets[wallet].used = 0;
 
 	--num_of_wallets;
+
+	return 0;
 }
 
 
@@ -94,10 +96,10 @@ int prof_add_scope(int wallet, char *start, char* end)
 	if (!start || !end)
 		return -1;
 
-	for (i = 0; i < PROF_MAX_SCOPES  || !(w->scopes)[i].used ; ++i);
+	for (i = 0; i < PROF_MAX_SCOPES  && (w->scopes)[i].used ; ++i);
 
 	w->scopes[i].used = 1;
-	++w->num_of_scopes;
+	++(w->num_of_scopes);
 
 	e.key = start;
 	e.data  = (void *) i;

@@ -22,7 +22,7 @@
 extern void prof_init();
 
 extern int prof_create_wallet();
-extern void prof_delete_wallet(int wallet);
+extern int prof_delete_wallet(int wallet);
 
 extern int prof_add_scope(int wallet, char *start, char* end);
 extern int prof_remove_scope(int wallet, int scope);
