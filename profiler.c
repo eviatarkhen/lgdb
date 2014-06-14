@@ -18,7 +18,6 @@
 
 #define _GNU_SOURCE
 #include <sys/time.h>
-#include <search.h>
 
 #include "profiler.h"
 #include "gdb.h"
@@ -79,7 +78,6 @@ int prof_delete_wallet(int wallet)
 int prof_add_scope(int wallet, char *start, char* end)
 {
 	wallet_t *w = NULL;
-	ENTRY e, *ep;
 	unsigned int i;
 
 	if (wallet < 0 || wallet >= PROF_MAX_WALLETS)
@@ -101,17 +99,8 @@ int prof_add_scope(int wallet, char *start, char* end)
 	w->scopes[i].used = 1;
 	++(w->num_of_scopes);
 
-	e.key = start;
-	e.data  = (void *) i;
-	e.key = end;
-	e.data  = (void *) i;
-
-	/* TODO add this to global hash */
-	(void)e;
-	(void)ep;
-
-	gdb_add_bp(start);
-	gdb_add_bp(end);
+//	gdb_add_bp(start);
+//	gdb_add_bp(end);
 
 	return i;
 }
@@ -133,8 +122,8 @@ int prof_remove_scope(int wallet, int scope)
 
 	w->scopes[scope].used = 0;
 
-	gdb_remove_bp(w->scopes[scope].start);
-	gdb_remove_bp(w->scopes[scope].end);
+//	gdb_remove_bp(w->scopes[scope].start);
+//	gdb_remove_bp(w->scopes[scope].end);
 
 	return 0;
 }

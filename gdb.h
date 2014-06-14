@@ -19,8 +19,13 @@
 #ifndef GDB_H
 #define GDB_H
 
+struct gdb_event {
+	char* name;
+	int (*call_back)(void *data);
+};
+
 extern void gdb_init(char *kernel, char *pts);
-extern void gdb_add_bp(char *);
-extern void gdb_remove_bp(char *);
+extern int gdb_add_event(struct gdb_event *);
+extern int gdb_remove_event(struct gdb_event *);
 
 #endif 

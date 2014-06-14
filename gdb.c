@@ -22,14 +22,19 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <string.h>
+#include <search.h>
 
+#include "defs.h"
 #include "gdb.h"
 #include "lgdb_logger.h"
+
 
 static int outfd[2];
 static int infd[2];
 
 static pid_t pid;
+
+static void gdb_start(char*, char*);
 
 static void send_command(char *command)
 {
@@ -44,6 +49,11 @@ static void send_command(char *command)
 	}
 }
 
+static size_t calc_max_num_events()
+{
+	return PROF_MAX_WALLETS * PROF_MAX_SCOPES * 2;
+}
+
 void gdb_close()
 {
 	close(infd[1]);
@@ -52,10 +62,16 @@ void gdb_close()
 	kill(pid, SIGTERM);
 }
 
-//TODO: add SIGCLD handler
 
-void
-gdb_init(char *kernel, char *pts)
+void gdb_init(char *kernel, char *pts)
+{
+	gdb_start(kernel, pts);
+	if (!hcreate(calc_max_num_events()))
+		exit(-1);
+}
+
+//TODO: add SIGCLD handler
+static void gdb_start(char *kernel, char *pts)
 {
 	if (pipe(infd) < 0) {
 		perror("pipe: infd");
@@ -124,10 +140,36 @@ gdb_init(char *kernel, char *pts)
 	
 }
 
-void gdb_add_bp(char *bp)
+int gdb_add_event(struct gdb_event *event)
 {
+	char command[500];
+	ENTRY e, *ep;
+
+	if (!event)
+		return -1;
+
+	memset(command, 0, sizeof(command));
+
+	sprintf(command, "b %s", event->name);
+
+	e.key = event->name;
+	e.data = (void *)event;
+	ep = hsearch(e, ENTER);
+	if (!ep) {
+		lgdb_print(LOG_ERR, "failed to add event %s\n", event->name);
+		return -1;
+	}
+
+	send_command(command);
+
+	return 0;
 }
 
-void gdb_remove_bp(char *bp)
+int gdb_remove_event(struct gdb_event *event)
 {
+	if (!event)
+		return -1;
+
+	//TODO replace hearsh with something else as it does not support removal
+	return 0;
 }
