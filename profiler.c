@@ -25,11 +25,11 @@
 
 typedef struct prof_scope
 {
-	char *start;
-	char *end;
 	unsigned int used;
 	unsigned long long charge;
 	struct timeval start_time;
+	struct gdb_event start_event;
+	struct gdb_event end_event;
 } prof_scope_t;
 
 typedef struct wallet
@@ -42,6 +42,34 @@ typedef struct wallet
 
 static wallet_t wallets[PROF_MAX_WALLETS];
 static int num_of_wallets;
+
+static int start_charge_cb(void *data)
+{
+	prof_scope_t *scope = (prof_scope_t *)data;
+	gettimeofday(&(scope->start_time), NULL);
+	lgdb_print(LOG_DBG, "profiling start event on scope %s \n", scope->start_event.name);
+
+	return 0;
+}
+
+static int end_charge_cb(void *data)
+{
+	prof_scope_t *scope = (prof_scope_t *)data;
+	struct timeval tv;
+	unsigned long long elapsed;
+
+	if (!scope)
+		return -1;
+
+	gettimeofday(&tv, NULL);
+
+	elapsed = tv.tv_sec * 1000000 + tv.tv_usec - scope->start_time.tv_sec * 1000000 + scope->start_time.tv_usec; 
+	scope->charge += elapsed;
+
+	lgdb_print(LOG_DBG, "profiling end event on scope %s elapsed %llu\n", scope->end_event.name, elapsed);
+
+	return 0;
+}
 
 void prof_init()
 {
@@ -99,8 +127,13 @@ int prof_add_scope(int wallet, char *start, char* end)
 	w->scopes[i].used = 1;
 	++(w->num_of_scopes);
 
-//	gdb_add_bp(start);
-//	gdb_add_bp(end);
+	w->scopes[i].start_event.name = start;
+	w->scopes[i].end_event.name = end;
+	w->scopes[i].start_event.call_back = start_charge_cb;
+	w->scopes[i].end_event.call_back = end_charge_cb;
+
+	gdb_add_event(&(w->scopes[i].start_event));
+	gdb_add_event(&(w->scopes[i].end_event));
 
 	return i;
 }
@@ -122,8 +155,8 @@ int prof_remove_scope(int wallet, int scope)
 
 	w->scopes[scope].used = 0;
 
-//	gdb_remove_bp(w->scopes[scope].start);
-//	gdb_remove_bp(w->scopes[scope].end);
+	gdb_remove_event(&(w->scopes[scope].start_event));
+	gdb_remove_event(&(w->scopes[scope].end_event));
 
 	return 0;
 }

@@ -26,7 +26,6 @@
 
 #include "defs.h"
 #include "gdb.h"
-#include "lgdb_logger.h"
 
 
 static int outfd[2];

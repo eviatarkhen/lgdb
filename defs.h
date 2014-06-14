@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lgdb_logger.h"
+
 #define VERSION "1.0.0"
 
 #define PROF_MAX_WALLETS 10
