@@ -25,6 +25,12 @@
 
 #include "lgdb_logger.h"
 
+extern FILE *lgdb_stdout;
+extern FILE *lgdb_stderr;
+extern FILE *lgdb_stdlog;
+extern FILE *lgdb_stdin;
+extern FILE *instream;
+
 #define VERSION "1.0.0"
 
 #define PROF_MAX_WALLETS 10

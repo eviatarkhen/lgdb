@@ -19,26 +19,7 @@
 #ifndef LGDB_CLI_H
 #define LGDB_CLI_H
 
-struct cmd_list_element
-{
-        /* Points to next command in this list */
-        struct cmd_list_element *next;
-
-        /* Name of this command */
-        char *name;
-
-        /* Command's callback */
-        void (*function) (char *args, int from_tty);
-
-        /* Documentation for this command */
-        char *doc;
-};
-
-extern void print_lgdb_version(void);
-extern void print_lgdb_help(void);
 extern void cli_command_loop(void);
 extern void init_cli_cmds(void);
-extern void add_cmd(char *name, void (*func) (char *,int), char *doc, struct cmd_list_element **list);
 
-extern struct cmd_list_element *cmdlist; 
 #endif 

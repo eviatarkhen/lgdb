@@ -64,6 +64,16 @@ void gdb_close()
 
 void gdb_init(char *kernel, char *pts)
 {
+        if (access(kernel, F_OK) == -1) {
+                fprintf(lgdb_stderr, "LgDb:  kernel binary %s does not exists.\n", kernel);
+		return;
+        }
+
+	if (access(pts, F_OK) == -1) {
+                fprintf(lgdb_stderr, "LgDb:  pseudo ternimal %s does not exists.\n", pts);
+		return;
+        }
+
 	gdb_start(kernel, pts);
 	if (!hcreate(calc_max_num_events()))
 		exit(-1);

@@ -25,7 +25,7 @@ static FILE* log_file;
 
 unsigned int log_type_enabled[LOG_MAX] = { 1, 1 };
 
-void init_logger()
+void logger_init()
 {
 	log_file = fopen("lgdb.log", "a+");	
 }

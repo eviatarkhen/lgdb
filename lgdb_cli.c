@@ -23,15 +23,21 @@
 #include <unistd.h>
 #include <errno.h>
 #include <ctype.h>
+#include <assert.h>
 
 #define LGDB_PROMPT "(lgdb) "
 
-extern FILE *lgdb_stdout;
-extern FILE *lgdb_stderr;
-extern FILE *lgdb_stdlog;
-extern FILE *lgdb_stdin;
-
-extern FILE *instream;
+struct cmd_list_element
+{
+        /* Points to next command in this list */
+        struct cmd_list_element *next;
+        /* Name of this command */
+        char *name;
+        /* Command's callback */
+        void (*function) (char *args, int from_tty);
+        /* Documentation for this command */
+        char *doc;
+};
 
 struct readline_input_state
 {
@@ -43,30 +49,6 @@ struct cmd_list_element *cmdlist;
 
 //char *saved_command_line;
 //int saved_command_line_size = 100;
-
-void
-print_lgdb_version(void)
-{
-        fprintf(lgdb_stdout, "LGDB %s\n"
-                             "Copyright (C) 2012, 2011-2014 Eviatar Khen Technologies, Inc.\n"
-                             "This program is free software; you can redistribute it and/or modify\n"
-                             "it under the terms of the GNU General Public License as published by\n"
-                             "the Free Software Foundation; either version 3 of the License, or\n"
-                             "(at your option) any later version.\n", VERSION);
-}
-
-void
-print_lgdb_help(void)
-{
-        fprintf(lgdb_stdout, "This is LGDB. Usage: \n\n"
-                             "    lgdb [options] add-more-here\n\n"
-                             "Options:\n\n"
-                             "  --version	Print version informationand then exit.\n"
-                             "  --help	Print this message.\n"
-                             "  --pts		pseodu terminal number.\n"
-                             "  --kernel	kernel binary.\n\n"
-                             "For more information go to https://github/eviatarkhen/lgdb\n\n");
-}
 
 void
 add_cmd(char *name, void (*func) (char *,int), char *doc, struct cmd_list_element **list)
@@ -101,11 +83,16 @@ void lgdb_quit(char * c, int i)
 	exit(0);
 }
 
+static void lgdb_cli_prof(char * c, int i)
+{
+}
+
 void
 init_cli_cmds(void)
 {
 	add_cmd("quit", lgdb_quit, "quit lgdb", &cmdlist);
 	add_cmd("q", lgdb_quit, "quit lgdb", &cmdlist);
+	add_cmd("profile", lgdb_cli_prof, "quit lgdb", &cmdlist);
 }
 
 static void
@@ -118,12 +105,13 @@ display_lgdb_prompt(char *display)
 	fflush (lgdb_stdout);	
 }
 
+// returns the length of the command part, i.e not including arguments
 static int
-find_command_length(const char *text)
+get_command_length(const char *text)
 {
 	const char *p = text;
 
-	while ( isalnum(*p) )
+	while (isalnum(*p))
 		++p;
 	
 	return p - text;
@@ -147,20 +135,17 @@ find_cmd(char *command, int len, struct cmd_list_element *clist)
 static struct cmd_list_element *
 lookup_cmd(char **line, struct cmd_list_element *clist)
 {
-	int len, tmp;
+	int command_len, tmp;
 	char *command;
 	struct cmd_list_element *found = 0;
 
-	if ( !*line )
-		return 0;
-
 	/* Extract the command */
-	len = find_command_length(*line);
+	command_len = get_command_length(*line);
 	
-	if ( len == 0 )
+	if (command_len == 0)
 		return 0;
 
-	command = (char *) alloca(len + 1);	
+	command = (char *) alloca(command_len + 1);	
 	memcpy(command, *line, len);
 	command[len] = '\0';
 
@@ -169,7 +154,7 @@ lookup_cmd(char **line, struct cmd_list_element *clist)
 
 	/* If was found, lower case the command and search again */
 	if ( !found ) {
-		for (tmp = 0; tmp < len; tmp++) {
+		for (tmp = 0; tmp < command_len; tmp++) {
 			char x = command[tmp];
 
 			command[tmp] = isupper(x) ? tolower(x) : x; 
@@ -177,51 +162,33 @@ lookup_cmd(char **line, struct cmd_list_element *clist)
 		found = find_cmd(command, len, clist);	
 	}
 
-	*line += len;
+	*line += command_len;
 
-	if ( ! found )
+	if (!found)
 		fprintf(lgdb_stdout, "unknown command: %s\n", command);
 
 	return found;
 }
 
 static void
-execute_command(char *p, int from_stdin)
+execute_command(char *line, int from_stdin)
 {
 	struct cmd_list_element *c;
 
-	if ( p == NULL )
-		return;
+	assert(line);
 
-	while ( *p == ' ' || *p == '\t' )
-		++p;
+	c = lookup_cmd(&line, cmdlist);
 
-	if ( *p ) {
-		char *args;
-	
-		c = lookup_cmd(&p, cmdlist);
-
-		if ( c && c->function ) {
-			/* Pass null arg rather than an empty one*/
-			args = *p ? p : 0;
-
-			/* execute command */
-			c->function(args, from_stdin);
-		}
-	}
+	if (c && c->function)
+		c->function(line, from_stdin);
 }
 
-static void
-command_handler(char *command)
-{
-	if ( command == 0 ) {
-		fprintf(lgdb_stdout, "quit\n");
-		execute_command("quit", stdin == instream);
-	}
 
-	execute_command(command, stdin == instream);
-}
-
+// handle a command line
+// if the command ends with '\' read another command line
+// if the line is emply do nothing
+// ignore spaces
+// if starts with '#' handle as a comment
 static void
 command_line_handler(char *rl)
 {
@@ -233,12 +200,14 @@ command_line_handler(char *rl)
 	char *nline;
 	//char got_eof = 0;
 
+	assert(rl && rl != (char *)EOF );
+
 	if ( linebuffer == 0 ) {
 		linelength = 80;
 		linebuffer = (char *)malloc(linelength);
 		if ( !linebuffer ) {
 			perror("command_line_handler: malloc");
-			return;
+			exit(-1);
 		}
 	}
 
@@ -251,18 +220,12 @@ command_line_handler(char *rl)
 		 more_to_come = 0;
 	}
 
-	if ( !rl || rl == (char *)EOF ) {
-	//	got_eof = 1;
-		command_handler(0);
-		return;
-	}
-
 	if ( strlen(rl) + 1 + (p - linebuffer) > linelength ) {
 		linelength = strlen(rl) + 1 + (p - linebuffer);
 		nline = (char *)realloc(linebuffer, linelength);
 		if ( !nline ) {
 			perror("command_line_handler: realloc");
-			return;
+			exit(-1);
 		}
 		p += nline - linebuffer;
 		linebuffer = nline;
@@ -291,7 +254,7 @@ command_line_handler(char *rl)
 		return;
 	}
 
-	/* If we just got an empty line, do nothing - maybe in the future, repeat the last command */
+	/* If we just got an empty line, do nothing - TODO: repeat the last command */
 	if ( p == linebuffer && *p != '\\') {
 		//command_handler(saved_command_line);
 		display_lgdb_prompt (0);
@@ -312,7 +275,11 @@ command_line_handler(char *rl)
 
 	/* commnet */
 	if ( *p1 == '#' )
-		*p1 = '\0';
+	{
+	//	*p1 = '\0';
+		display_lgdb_prompt (0);
+		return;
+	}
 
 	//if (linelength > saved_command_line_size)
 	//{
@@ -327,11 +294,12 @@ command_line_handler(char *rl)
 	//}
 	//return;
 
-	command_handler (linebuffer);
+	execute_command(linebuffer, stdin == instream);
 	display_lgdb_prompt (0);
 	return;
 }
 
+// read chars until \n or EOF
 static void
 lgdb_readline(void)
 {
@@ -374,6 +342,7 @@ lgdb_readline(void)
 	command_line_handler(line);
 }
 
+// cli main loop: wait for events on stdin
 static void
 start_event_loop(void)
 {
