@@ -35,7 +35,7 @@ void enable_log_type(log_type type, unsigned int enable)
 	log_type_enabled[type] = enable;
 }
 
-void lgdb_print(log_type type, const char *format, ...)
+void lgdb_log(log_type type, const char *format, ...)
 {
 	va_list args;
 	struct timeval tv;

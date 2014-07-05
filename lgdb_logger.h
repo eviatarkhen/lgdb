@@ -28,7 +28,7 @@ typedef enum {
 extern unsigned int log_type_enabled[LOG_MAX];
 
 extern void logger_init();
-extern void lgdb_print(log_type type, const char *format, ...);
+extern void lgdb_log(log_type type, const char *format, ...);
 
 extern void enable_log_type(log_type type, unsigned int enable);
 

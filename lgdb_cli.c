@@ -26,6 +26,7 @@
 #include <assert.h>
 
 #define LGDB_PROMPT "(lgdb) "
+#define MAX_ARGS 10
 
 struct cmd_list_element
 {
@@ -34,7 +35,7 @@ struct cmd_list_element
         /* Name of this command */
         char *name;
         /* Command's callback */
-        void (*function) (char *args, int from_tty);
+        void (*function) (int argc, char **argv, int from_tty);
         /* Documentation for this command */
         char *doc;
 };
@@ -51,7 +52,7 @@ struct cmd_list_element *cmdlist;
 //int saved_command_line_size = 100;
 
 void
-add_cmd(char *name, void (*func) (char *,int), char *doc, struct cmd_list_element **list)
+add_cmd(char *name, void (*func) (int, char **,int), char *doc, struct cmd_list_element **list)
 {
 	struct cmd_list_element *c = (struct cmd_list_element *) malloc(sizeof(struct cmd_list_element));
 	struct cmd_list_element *p;
@@ -78,12 +79,12 @@ add_cmd(char *name, void (*func) (char *,int), char *doc, struct cmd_list_elemen
 	c->function = func;
 }
 
-void lgdb_quit(char * c, int i)
+void lgdb_quit(int argc, char **argv, int i)
 {
 	exit(0);
 }
 
-static void lgdb_cli_prof(char * c, int i)
+static void lgdb_cli_prof(int argc, char **argv, int i)
 {
 }
 
@@ -92,7 +93,7 @@ init_cli_cmds(void)
 {
 	add_cmd("quit", lgdb_quit, "quit lgdb", &cmdlist);
 	add_cmd("q", lgdb_quit, "quit lgdb", &cmdlist);
-	add_cmd("profile", lgdb_cli_prof, "quit lgdb", &cmdlist);
+	add_cmd("profile", lgdb_cli_prof, "lgdb profiler", &cmdlist);
 }
 
 static void
@@ -120,9 +121,7 @@ get_command_length(const char *text)
 static struct cmd_list_element *
 find_cmd(char *command, int len, struct cmd_list_element *clist)
 {
-	struct cmd_list_element *found;
-
-	found = (struct cmd_list_element *) NULL;
+	struct cmd_list_element *found = NULL;
 
 	for (found = clist; found; found = found->next) {
 		if (!strncmp(command, found->name, len) && found->function )
@@ -146,11 +145,11 @@ lookup_cmd(char **line, struct cmd_list_element *clist)
 		return 0;
 
 	command = (char *) alloca(command_len + 1);	
-	memcpy(command, *line, len);
-	command[len] = '\0';
+	memcpy(command, *line, command_len);
+	command[command_len] = '\0';
 
 	/* Look it up */
-	found = find_cmd(command, len, clist);	
+	found = find_cmd(command, command_len, clist);	
 
 	/* If was found, lower case the command and search again */
 	if ( !found ) {
@@ -159,7 +158,7 @@ lookup_cmd(char **line, struct cmd_list_element *clist)
 
 			command[tmp] = isupper(x) ? tolower(x) : x; 
 		} 
-		found = find_cmd(command, len, clist);	
+		found = find_cmd(command, command_len, clist);	
 	}
 
 	*line += command_len;
@@ -171,6 +170,29 @@ lookup_cmd(char **line, struct cmd_list_element *clist)
 }
 
 static void
+delimit_args(char *line, int *argc, char **argv)
+{
+	int count = 0;
+
+	while (line && count < MAX_ARGS) {
+		// remove starting spaces
+		while (*line == ' ') {
+			++line;
+			continue;
+		}
+
+		argv[count] = line;
+		if ((line = strchr(line, ' '))) {
+			*line = '\0';
+			++line;
+		}
+
+		++count;
+	}
+	*argc = count;
+}
+
+static void
 execute_command(char *line, int from_stdin)
 {
 	struct cmd_list_element *c;
@@ -179,8 +201,13 @@ execute_command(char *line, int from_stdin)
 
 	c = lookup_cmd(&line, cmdlist);
 
-	if (c && c->function)
-		c->function(line, from_stdin);
+	if (c && c->function) {
+		int argc = 0;
+		char *argv[MAX_ARGS];
+
+		delimit_args(line, &argc, argv);
+		c->function(argc, argv, from_stdin);
+	}
 }
 
 

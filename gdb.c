@@ -37,7 +37,7 @@ static void gdb_start(char*, char*);
 
 static void send_command(char *command)
 {
-	lgdb_print(LOG_DBG, "Sending command \"%s\" to gdb\n", command);
+	lgdb_log(LOG_DBG, "Sending command \"%s\" to gdb\n", command);
 
 	strcat(command, "\n");
 	if (write(infd[1], command, strlen(command)) < 0) {
@@ -165,7 +165,7 @@ int gdb_add_event(struct gdb_event *event)
 	e.data = (void *)event;
 	ep = hsearch(e, ENTER);
 	if (!ep) {
-		lgdb_print(LOG_ERR, "failed to add event %s\n", event->name);
+		lgdb_log(LOG_ERR, "failed to add event %s\n", event->name);
 		return -1;
 	}
 

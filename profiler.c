@@ -47,7 +47,7 @@ static int start_charge_cb(void *data)
 {
 	prof_scope_t *scope = (prof_scope_t *)data;
 	gettimeofday(&(scope->start_time), NULL);
-	lgdb_print(LOG_DBG, "profiling start event on scope %s \n", scope->start_event.name);
+	lgdb_log(LOG_DBG, "profiling start event on scope %s \n", scope->start_event.name);
 
 	return 0;
 }
@@ -66,7 +66,7 @@ static int end_charge_cb(void *data)
 	elapsed = tv.tv_sec * 1000000 + tv.tv_usec - scope->start_time.tv_sec * 1000000 + scope->start_time.tv_usec; 
 	scope->charge += elapsed;
 
-	lgdb_print(LOG_DBG, "profiling end event on scope %s elapsed %llu\n", scope->end_event.name, elapsed);
+	lgdb_log(LOG_DBG, "profiling end event on scope %s elapsed %llu\n", scope->end_event.name, elapsed);
 
 	return 0;
 }
