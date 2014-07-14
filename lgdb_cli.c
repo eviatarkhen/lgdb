@@ -18,6 +18,7 @@
 
 #include "defs.h"
 #include "lgdb_cli.h"
+#include "profile.h"
 
 #include <sys/select.h>
 #include <unistd.h>
@@ -79,21 +80,61 @@ add_cmd(char *name, void (*func) (int, char **,int), char *doc, struct cmd_list_
 	c->function = func;
 }
 
+static bool is_number(char *str)
+{
+	size_t len;
+	int i;
+
+	if (!str)
+		return false;
+	
+	len = strlen(str);
+	for (i = 0; i < len; ++i)
+		if (!isdigit(str[i]))
+			break;
+
+	return (i == len) ? true : false;
+}
+
 void lgdb_quit(int argc, char **argv, int i)
 {
 	exit(0);
 }
 
-static void lgdb_cli_prof(int argc, char **argv, int i)
+static void lgdb_cli_prof(int argc, char **argv, int is_stdin)
 {
+	if (!strcmp(argv[0], "create"))
+	{
+		int wallet = prof_create_wallet();
+	 	fprintf(lgdb_stdout, "Created Wallet %d\n", wallet);
+		return;
+	}
+
+	
+	if (is_number(argv[0]))
+	{
+		int wallet = atoi(argv[0]);
+
+		if (argc == 3)
+		{
+			int scope = prof_add_scope(wallet, argv[1], argv[2]);
+			fprintf(lgdb_stdout, "Added Scope %d to Wallet %d\n", scope, wallet);
+			return; 
+		}
+	}
+
+	fprintf(lgdb_stdout, "Undefined command for profiler\n");
 }
 
 void
 init_cli_cmds(void)
 {
+	cmdlist = NULL;
 	add_cmd("quit", lgdb_quit, "quit lgdb", &cmdlist);
 	add_cmd("q", lgdb_quit, "quit lgdb", &cmdlist);
 	add_cmd("profile", lgdb_cli_prof, "lgdb profiler", &cmdlist);
+	add_cmd("prof", lgdb_cli_prof, "lgdb profiler", &cmdlist);
+	add_cmd("p", lgdb_cli_prof, "lgdb profiler", &cmdlist);
 }
 
 static void

@@ -121,7 +121,6 @@ captured_main(void *data)
 
 	print_lgdb_version();
 	
-	cmdlist = NULL;
 	init_cli_cmds();
 	logger_init();
 	prof_init();

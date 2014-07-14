@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <sys/time.h>
+#include <time.h>
 #include "lgdb_logger.h"
 
 static FILE* log_file;
@@ -30,6 +31,19 @@ void logger_init()
 	log_file = fopen("lgdb.log", "a+");	
 }
 
+static char* type_to_str(log_type type)
+{
+	switch(type)
+	{
+	case LOG_DBG:
+		return "DEBUG";
+	case LOG_ERR:
+		return "ERROR";
+	default:
+		break;
+	}
+	return "Unknown";
+}
 void enable_log_type(log_type type, unsigned int enable)
 {
 	log_type_enabled[type] = enable;
@@ -39,12 +53,16 @@ void lgdb_log(log_type type, const char *format, ...)
 {
 	va_list args;
 	struct timeval tv;
+	struct tm ts;
+	char buf[80];
 
         if (!log_type_enabled[type])
 		return;
 
 	gettimeofday(&tv, NULL);
-	fprintf(log_file, "[%lu.%lu]", tv.tv_sec, tv.tv_usec / 1000);
+	ts = *localtime(&tv.tv_sec);
+	strftime(buf, sizeof(buf), "%b %d %H:%M:%S", &ts);
+	fprintf(log_file, "%s %s : [%lu.%lu] ", buf, type_to_str(type), tv.tv_sec, tv.tv_usec / 1000);
 	va_start(args, format);
 	vfprintf(log_file, format, args);
 	va_end(args);

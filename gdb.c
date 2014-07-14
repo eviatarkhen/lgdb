@@ -32,12 +32,16 @@ static int outfd[2];
 static int infd[2];
 
 static pid_t pid;
+static bool gdb_enabled;
 
 static void gdb_start(char*, char*);
 
 static void send_command(char *command)
 {
 	lgdb_log(LOG_DBG, "Sending command \"%s\" to gdb\n", command);
+
+	if (!gdb_enabled)
+		return;
 
 	strcat(command, "\n");
 	if (write(infd[1], command, strlen(command)) < 0) {
@@ -64,6 +68,11 @@ void gdb_close()
 
 void gdb_init(char *kernel, char *pts)
 {
+	gdb_enabled = false;
+
+	if (!hcreate(calc_max_num_events()))
+		exit(-1);
+
         if (access(kernel, F_OK) == -1) {
                 fprintf(lgdb_stderr, "LgDb:  kernel binary %s does not exists.\n", kernel);
 		return;
@@ -75,13 +84,12 @@ void gdb_init(char *kernel, char *pts)
         }
 
 	gdb_start(kernel, pts);
-	if (!hcreate(calc_max_num_events()))
-		exit(-1);
 }
 
 //TODO: add SIGCLD handler
 static void gdb_start(char *kernel, char *pts)
 {
+	gdb_enabled = true;
 	if (pipe(infd) < 0) {
 		perror("pipe: infd");
 		exit(-2);
@@ -157,10 +165,6 @@ int gdb_add_event(struct gdb_event *event)
 	if (!event)
 		return -1;
 
-	memset(command, 0, sizeof(command));
-
-	sprintf(command, "b %s", event->name);
-
 	e.key = event->name;
 	e.data = (void *)event;
 	ep = hsearch(e, ENTER);
@@ -169,6 +173,8 @@ int gdb_add_event(struct gdb_event *event)
 		return -1;
 	}
 
+	memset(command, 0, sizeof(command));
+	sprintf(command, "b %s", event->name);
 	send_command(command);
 
 	return 0;

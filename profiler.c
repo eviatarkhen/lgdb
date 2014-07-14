@@ -114,13 +114,13 @@ int prof_add_scope(int wallet, char *start, char* end)
 	w = &wallets[wallet];
 
 	if (!w->used)
-		return -1;
+		return -2;
 
 	if (w->num_of_scopes == PROF_MAX_SCOPES)
-		return -1;
+		return -3;
 
 	if (!start || !end)
-		return -1;
+		return -4;
 
 	for (i = 0; i < PROF_MAX_SCOPES  && (w->scopes)[i].used ; ++i);
 
