@@ -188,3 +188,8 @@ int gdb_remove_event(struct gdb_event *event)
 	//TODO replace hsearsh with something else as it does not support removal
 	return 0;
 }
+
+static void gdb_continue()
+{
+	send_command("c");
+}

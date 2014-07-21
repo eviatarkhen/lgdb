@@ -113,13 +113,17 @@ static void lgdb_cli_prof(int argc, char **argv, int is_stdin)
 		return;
 	}
 
-	
 	if (is_number(argv[0])) {
 		int wallet = atoi(argv[0]);
 
 		if (argc == 3) {
 			prof_add_scope(wallet, argv[1], argv[2]);
 			return; 
+		}
+
+		if (!strcmp(argv[1], "start")) {
+			prof_start(wallet);
+			return;
 		}
 	}
 

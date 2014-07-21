@@ -184,3 +184,7 @@ int prof_remove_scope(int wallet, int scope)
 
 	return 0;
 }
+
+void prof_start(int wallet)
+{
+}
