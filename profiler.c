@@ -18,6 +18,8 @@
 
 #define _GNU_SOURCE
 #include <sys/time.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "profiler.h"
 #include "gdb.h"
@@ -37,6 +39,7 @@ typedef struct wallet
 	unsigned int used;
 	unsigned int num_of_scopes;
 	unsigned long long charge;
+	char name[50];
 	prof_scope_t scopes[PROF_MAX_SCOPES];
 } wallet_t;
 
@@ -76,17 +79,28 @@ void prof_init()
 	memset(wallets, 0, sizeof(wallets));
 }
 
-int prof_create_wallet()
+int prof_create_wallet(char *name)
 {
 	int i;
-	if (num_of_wallets == PROF_MAX_WALLETS)
+
+	if (!name) {
+		fprintf(lgdb_stdout, "Failed to create wallet. No name was given\n");
 		return -1;
+	}
+
+	if (num_of_wallets == PROF_MAX_WALLETS) {
+		fprintf(lgdb_stdout, "Failed to create wallet. Reached the maximun number of wallets %d\n", PROF_MAX_WALLETS);
+		return -1;
+	}
 	
 	for (i = 0; i < PROF_MAX_WALLETS  && wallets[i].used ; ++i);
 		
 	++num_of_wallets;
 	wallets[i].used = 1;
+	strcpy(wallets[i].name, name);
 	
+	fprintf(lgdb_stdout, "Created wallet #%d %s\n", i, name);
+
 	return i;
 }
 
@@ -108,19 +122,27 @@ int prof_add_scope(int wallet, char *start, char* end)
 	wallet_t *w = NULL;
 	unsigned int i;
 
-	if (wallet < 0 || wallet >= PROF_MAX_WALLETS)
+	if (wallet < 0 || wallet >= PROF_MAX_WALLETS) {
+		fprintf(lgdb_stdout, "Invalid wallet %d\n", wallet);
 		return -1;
+	}
 	
 	w = &wallets[wallet];
 
-	if (!w->used)
-		return -2;
+	if (!w->used) {
+		fprintf(lgdb_stdout, "Wallet %d wasn't created\n", wallet);
+		return -1;
+	}
 
-	if (w->num_of_scopes == PROF_MAX_SCOPES)
-		return -3;
+	if (w->num_of_scopes == PROF_MAX_SCOPES) {
+		fprintf(lgdb_stdout, "Reached the maximun number of scopes for wallet %d\n", PROF_MAX_SCOPES);
+		return -1;
+	}
 
-	if (!start || !end)
-		return -4;
+	if (!start || !end) {
+		fprintf(lgdb_stdout, "Invalid scope\n");
+		return -1;
+	}
 
 	for (i = 0; i < PROF_MAX_SCOPES  && (w->scopes)[i].used ; ++i);
 
@@ -132,9 +154,11 @@ int prof_add_scope(int wallet, char *start, char* end)
 	w->scopes[i].start_event.call_back = start_charge_cb;
 	w->scopes[i].end_event.call_back = end_charge_cb;
 
+	// TODO handle fail
 	gdb_add_event(&(w->scopes[i].start_event));
 	gdb_add_event(&(w->scopes[i].end_event));
 
+	fprintf(lgdb_stdout, "Add scope #%d to wallet %s.\nStart: %s\nEnd: %s\n", i, w->name, start, end);
 	return i;
 }
 

@@ -185,6 +185,6 @@ int gdb_remove_event(struct gdb_event *event)
 	if (!event)
 		return -1;
 
-	//TODO replace hearsh with something else as it does not support removal
+	//TODO replace hsearsh with something else as it does not support removal
 	return 0;
 }

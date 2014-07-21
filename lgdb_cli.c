@@ -103,22 +103,22 @@ void lgdb_quit(int argc, char **argv, int i)
 
 static void lgdb_cli_prof(int argc, char **argv, int is_stdin)
 {
-	if (!strcmp(argv[0], "create"))
-	{
-		int wallet = prof_create_wallet();
-	 	fprintf(lgdb_stdout, "Created Wallet %d\n", wallet);
+	if (!strcmp(argv[0], "create")) {
+		if (argc != 2) {
+			fprintf(lgdb_stdout, "A name must be given to the wallet\n");
+			return;
+		}
+
+		prof_create_wallet(argv[1]);
 		return;
 	}
 
 	
-	if (is_number(argv[0]))
-	{
+	if (is_number(argv[0])) {
 		int wallet = atoi(argv[0]);
 
-		if (argc == 3)
-		{
-			int scope = prof_add_scope(wallet, argv[1], argv[2]);
-			fprintf(lgdb_stdout, "Added Scope %d to Wallet %d\n", scope, wallet);
+		if (argc == 3) {
+			prof_add_scope(wallet, argv[1], argv[2]);
 			return; 
 		}
 	}

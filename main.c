@@ -60,7 +60,7 @@ print_lgdb_help(void)
                              "    lgdb [options] add-more-here\n\n"
                              "Options:\n\n"
                              "  --version       Print version informationand then exit.\n"
-                             "  --help  Print this message.\n"
+                             "  --help	  Print this message.\n"
                              "  --pts           pseodu terminal number.\n"
                              "  --kernel        kernel binary.\n\n"
                              "For more information go to https://github/eviatarkhen/lgdb\n\n");
