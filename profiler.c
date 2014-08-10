@@ -39,13 +39,13 @@ typedef struct wallet
 	unsigned int used;
 	unsigned int num_of_scopes;
 	unsigned long long charge;
-	char name[50];
+	char name[512];
 	prof_scope_t scopes[PROF_MAX_SCOPES];
 } wallet_t;
 
 static wallet_t wallets[PROF_MAX_WALLETS];
 static int num_of_wallets;
-
+//----------------------------------------------------------------------------------
 static int start_charge_cb(void *data)
 {
 	prof_scope_t *scope = (prof_scope_t *)data;
@@ -55,6 +55,7 @@ static int start_charge_cb(void *data)
 	return 0;
 }
 
+//----------------------------------------------------------------------------------
 static int end_charge_cb(void *data)
 {
 	prof_scope_t *scope = (prof_scope_t *)data;
@@ -73,12 +74,12 @@ static int end_charge_cb(void *data)
 
 	return 0;
 }
-
+//----------------------------------------------------------------------------------
 void prof_init()
 {
 	memset(wallets, 0, sizeof(wallets));
 }
-
+//----------------------------------------------------------------------------------
 int prof_create_wallet(char *name)
 {
 	int i;
@@ -103,7 +104,7 @@ int prof_create_wallet(char *name)
 
 	return i;
 }
-
+//----------------------------------------------------------------------------------
 int prof_delete_wallet(int wallet)
 {
 	if (wallet < 0 || wallet >= PROF_MAX_WALLETS)
@@ -115,8 +116,7 @@ int prof_delete_wallet(int wallet)
 
 	return 0;
 }
-
-
+//----------------------------------------------------------------------------------
 int prof_add_scope(int wallet, char *start, char* end)
 {
 	wallet_t *w = NULL;
@@ -151,8 +151,9 @@ int prof_add_scope(int wallet, char *start, char* end)
 
 	w->scopes[i].start_event.name = start;
 	w->scopes[i].end_event.name = end;
-	w->scopes[i].start_event.call_back = start_charge_cb;
-	w->scopes[i].end_event.call_back = end_charge_cb;
+	w->scopes[i].end_event.data = &w->scopes[i];
+	w->scopes[i].start_event.callback = start_charge_cb;
+	w->scopes[i].end_event.callback = end_charge_cb;
 
 	// TODO handle fail
 	gdb_add_event(&(w->scopes[i].start_event));
@@ -161,7 +162,7 @@ int prof_add_scope(int wallet, char *start, char* end)
 	fprintf(lgdb_stdout, "Add scope #%d to wallet %s.\nStart: %s\nEnd: %s\n", i, w->name, start, end);
 	return i;
 }
-
+//----------------------------------------------------------------------------------
 int prof_remove_scope(int wallet, int scope)
 {
 	wallet_t *w = NULL;
@@ -184,7 +185,22 @@ int prof_remove_scope(int wallet, int scope)
 
 	return 0;
 }
-
-void prof_start(int wallet)
+//----------------------------------------------------------------------------------
+void prof_start()
 {
+	gdb_continue();
 }
+//----------------------------------------------------------------------------------
+unsigned long long prof_get_charge(int wallet)
+{
+	int i;
+	unsigned long long charge = 0;
+
+	for (i = 0; i < PROF_MAX_SCOPES; ++i) {
+		if (wallets[i].used)
+			charge += wallets[i].charge;
+	}
+
+	return charge;
+}
+//----------------------------------------------------------------------------------

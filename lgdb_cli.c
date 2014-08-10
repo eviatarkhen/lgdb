@@ -130,6 +130,21 @@ static void lgdb_cli_prof(int argc, char **argv, int is_stdin)
 	fprintf(lgdb_stdout, "Undefined command for profiler\n");
 }
 
+static void lgdb_cli_gdb(int argc, char **argv, int is_stdin)
+{
+	int i;
+	char command[512];
+
+	memset(command, 0, sizeof(command));
+	
+	for (i = 0; i < argc; ++i) {
+		strcat(command, argv[i]);
+		strcat(command, " ");
+	}
+
+	gdb_send_command(command);
+}
+
 void
 init_cli_cmds(void)
 {
@@ -139,6 +154,7 @@ init_cli_cmds(void)
 	add_cmd("profile", lgdb_cli_prof, "lgdb profiler", &cmdlist);
 	add_cmd("prof", lgdb_cli_prof, "lgdb profiler", &cmdlist);
 	add_cmd("p", lgdb_cli_prof, "lgdb profiler", &cmdlist);
+	add_cmd("gdb", lgdb_cli_gdb, "lgdb gdb hellper", &cmdlist);
 }
 
 static void

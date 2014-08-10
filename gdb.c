@@ -23,6 +23,8 @@
 #include <signal.h>
 #include <string.h>
 #include <search.h>
+#include <assert.h>
+#include <errno.h>
 
 #include "defs.h"
 #include "gdb.h"
@@ -35,8 +37,55 @@ static pid_t pid;
 static bool gdb_enabled;
 
 static void gdb_start(char*, char*);
+//--------------------------------------------------------------------------------
+static size_t wait_for_response(char * response)
+{
+	size_t bytes_read = 0;
+        size_t bytes_read_total = 0;
+	char * buf;
 
-static void send_command(char *command)
+	if (response) 
+		buf = response;
+	else {
+		buf = malloc(1000);
+		if (!buf) {
+			perror("malloc");
+			exit(-10);
+		}
+	}
+		
+	do
+	{
+		bytes_read = read(outfd[0], buf + bytes_read_total, 1000);
+		if (bytes_read == -1) {
+			if (errno != EAGAIN) {
+				perror("read");
+				exit(-10);
+			}
+			else {
+				if (!bytes_read_total) {
+					usleep(100);
+					continue;
+				}
+				break;
+			}
+		}
+		bytes_read_total += bytes_read;
+	}
+	while (bytes_read > 0);
+
+	buf[bytes_read_total] = '\0';
+	lgdb_log(LOG_DBG, "read from gdb %s\n", buf);
+
+	if (!response) {
+		free(buf);
+		return 0;
+	}
+
+	return bytes_read_total;
+}
+//--------------------------------------------------------------------------------
+static void send_command(char * command, bool should_respond, char * response)
 {
 	lgdb_log(LOG_DBG, "Sending command \"%s\" to gdb\n", command);
 
@@ -50,22 +99,16 @@ static void send_command(char *command)
 		close(outfd[0]);
 		exit(-8);
 	}
-}
 
+	if (should_respond)
+		wait_for_response(response);
+}
+//--------------------------------------------------------------------------------
 static size_t calc_max_num_events()
 {
 	return PROF_MAX_WALLETS * PROF_MAX_SCOPES * 2;
 }
-
-void gdb_close()
-{
-	close(infd[1]);
-	close(outfd[0]);
-	
-	kill(pid, SIGTERM);
-}
-
-
+//--------------------------------------------------------------------------------
 void gdb_init(char *kernel, char *pts)
 {
 	gdb_enabled = false;
@@ -85,7 +128,30 @@ void gdb_init(char *kernel, char *pts)
 
 	gdb_start(kernel, pts);
 }
+//--------------------------------------------------------------------------------
+static const char * parse_gdb_event(const char * line)
+{
+	char * name = strchr(line, ')');
+	name += 2;
+	assert(!strncmp(name, "at", 2));
+	name += 3;
 
+	return name;
+}
+//--------------------------------------------------------------------------------
+static struct gdb_event * get_gdb_event(const char *name)
+{
+	ENTRY e, *ep = NULL;
+	
+	e.key = (void *)name;
+	ep = hsearch(e, FIND);
+
+	if (!ep)
+		return NULL;
+
+	return ep->data;
+}
+//--------------------------------------------------------------------------------
 //TODO: add SIGCLD handler
 static void gdb_start(char *kernel, char *pts)
 {
@@ -143,28 +209,64 @@ static void gdb_start(char *kernel, char *pts)
 	close(outfd[1]);
 
 	sleep(5);
-	char command[100];
+	char command[1000];
+
+	fcntl(outfd[0], F_SETFL, O_NONBLOCK);
+
+	wait_for_response(NULL);
 
 	memset(command, 0, sizeof(command));
 	sprintf(command, "%s", "set logging on");
 
-	send_command(command);
+	send_command(command, true, NULL);
 
 	memset(command, 0, sizeof(command));
 	sprintf(command, "%s %s", "target remote", pts);
 
-	send_command(command);
+	send_command(command, true, NULL);
 	
 }
-
-int gdb_add_event(struct gdb_event *event)
+//--------------------------------------------------------------------------------
+void gdb_close()
 {
-	char command[500];
-	ENTRY e, *ep;
+	close(infd[1]);
+	close(outfd[0]);
+	
+	kill(pid, SIGTERM);
+}
+//--------------------------------------------------------------------------------
+void gdb_continue()
+{
+	char response[512];
+	const char * name = NULL;
+	struct gdb_event * event = NULL;
+
+	send_command("c", true, response);
+
+	name = parse_gdb_event(response);
+	lgdb_log(LOG_DBG, "got an event on %s\n", event->name);
+
+	event = get_gdb_event(name);
+	if (!event)
+		return;
+
+	event->callback(event->data);
+}
+//--------------------------------------------------------------------------------
+int gdb_add_event(struct gdb_event * event)
+{
+	char command[512];
+	char response[512];
+	ENTRY e, * ep;
 
 	if (!event)
 		return -1;
 
+	memset(command, 0, sizeof(command));
+	sprintf(command, "b %s", event->name);
+	send_command(command, true, response);
+
+	strcpy(event->name, parse_gdb_event(response));
 	e.key = event->name;
 	e.data = (void *)event;
 	ep = hsearch(e, ENTER);
@@ -173,14 +275,11 @@ int gdb_add_event(struct gdb_event *event)
 		return -1;
 	}
 
-	memset(command, 0, sizeof(command));
-	sprintf(command, "b %s", event->name);
-	send_command(command);
-
+	lgdb_log(LOG_DBG, "added an event on %s\n", event->name);
 	return 0;
 }
-
-int gdb_remove_event(struct gdb_event *event)
+//--------------------------------------------------------------------------------
+int gdb_remove_event(struct gdb_event * event)
 {
 	if (!event)
 		return -1;
@@ -188,8 +287,12 @@ int gdb_remove_event(struct gdb_event *event)
 	//TODO replace hsearsh with something else as it does not support removal
 	return 0;
 }
-
-static void gdb_continue()
+//--------------------------------------------------------------------------------
+void gdb_send_command(char * command)
 {
-	send_command("c");
+	char response[512];
+
+	send_command(command, true, response);
+
+	fprintf(lgdb_stdout, "%s\n", response);
 }

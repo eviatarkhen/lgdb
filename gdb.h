@@ -20,12 +20,15 @@
 #define GDB_H
 
 struct gdb_event {
-	char* name;
-	int (*call_back)(void *data);
+	char * name;
+	int (* callback)(void * data);
+	void * data;
 };
 
-extern void gdb_init(char *kernel, char *pts);
+extern void gdb_init(char * kernel, char * pts);
 extern int gdb_add_event(struct gdb_event *);
 extern int gdb_remove_event(struct gdb_event *);
+extern void gdb_continue();
+extern void gdb_send_commnad(char * command);
 
 #endif 
