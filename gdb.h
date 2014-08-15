@@ -21,12 +21,15 @@
 
 struct gdb_event {
 	char * name;
-	int (* callback)(void * data);
+	int (* start_callback)(void * data);
+	int (* end_callback)(void * data);
 	void * data;
+	unsigned int bp_start;
+	unsigned int bp_end;
 };
 
 extern void gdb_init(char * kernel, char * pts);
-extern int gdb_add_event(struct gdb_event *);
+extern int gdb_add_event(struct gdb_event *, char * start, char * end);
 extern int gdb_remove_event(struct gdb_event *);
 extern void gdb_continue();
 extern void gdb_send_commnad(char * command);

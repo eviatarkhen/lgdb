@@ -30,8 +30,7 @@ typedef struct prof_scope
 	unsigned int used;
 	unsigned long long charge;
 	struct timeval start_time;
-	struct gdb_event start_event;
-	struct gdb_event end_event;
+	struct gdb_event event;
 } prof_scope_t;
 
 typedef struct wallet
@@ -50,7 +49,7 @@ static int start_charge_cb(void *data)
 {
 	prof_scope_t *scope = (prof_scope_t *)data;
 	gettimeofday(&(scope->start_time), NULL);
-	lgdb_log(LOG_DBG, "profiling start event on scope %s \n", scope->start_event.name);
+	lgdb_log(LOG_DBG, "profiling start event on scope %s \n", scope->event.name);
 
 	return 0;
 }
@@ -70,7 +69,7 @@ static int end_charge_cb(void *data)
 	elapsed = tv.tv_sec * 1000000 + tv.tv_usec - scope->start_time.tv_sec * 1000000 + scope->start_time.tv_usec; 
 	scope->charge += elapsed;
 
-	lgdb_log(LOG_DBG, "profiling end event on scope %s elapsed %llu\n", scope->end_event.name, elapsed);
+	lgdb_log(LOG_DBG, "profiling end event on scope %s elapsed %llu\n", scope->event.name, elapsed);
 
 	return 0;
 }
@@ -117,10 +116,11 @@ int prof_delete_wallet(int wallet)
 	return 0;
 }
 //----------------------------------------------------------------------------------
-int prof_add_scope(int wallet, char *start, char* end)
+int prof_add_scope(int wallet, char * name, char * start, char * end)
 {
-	wallet_t *w = NULL;
+	wallet_t * w = NULL;
 	unsigned int i;
+	struct gdb_event * event;
 
 	if (wallet < 0 || wallet >= PROF_MAX_WALLETS) {
 		fprintf(lgdb_stdout, "Invalid wallet %d\n", wallet);
@@ -149,15 +149,14 @@ int prof_add_scope(int wallet, char *start, char* end)
 	w->scopes[i].used = 1;
 	++(w->num_of_scopes);
 
-	w->scopes[i].start_event.name = start;
-	w->scopes[i].end_event.name = end;
-	w->scopes[i].end_event.data = &w->scopes[i];
-	w->scopes[i].start_event.callback = start_charge_cb;
-	w->scopes[i].end_event.callback = end_charge_cb;
+	event = &(w->scopes[i].event);
+	event->name = name;
+        event->data = &w->scopes[i];
+        event->start_callback = start_charge_cb;
+        event->end_callback = end_charge_cb;
 
 	// TODO handle fail
-	gdb_add_event(&(w->scopes[i].start_event));
-	gdb_add_event(&(w->scopes[i].end_event));
+	gdb_add_event(event, start, end);
 
 	fprintf(lgdb_stdout, "Add scope #%d to wallet %s.\nStart: %s\nEnd: %s\n", i, w->name, start, end);
 	return i;
@@ -180,8 +179,7 @@ int prof_remove_scope(int wallet, int scope)
 
 	w->scopes[scope].used = 0;
 
-	gdb_remove_event(&(w->scopes[scope].start_event));
-	gdb_remove_event(&(w->scopes[scope].end_event));
+	gdb_remove_event(&(w->scopes[scope].event));
 
 	return 0;
 }

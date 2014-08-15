@@ -22,16 +22,19 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <string.h>
-#include <search.h>
 #include <assert.h>
 #include <errno.h>
+#include <ctype.h>
 
 #include "defs.h"
 #include "gdb.h"
 
+#define MAX_BP 100
+
 
 static int outfd[2];
 static int infd[2];
+static void * bp_to_callback[MAX_BP];
 
 static pid_t pid;
 static bool gdb_enabled;
@@ -75,7 +78,7 @@ static size_t wait_for_response(char * response)
 	while (bytes_read > 0);
 
 	buf[bytes_read_total] = '\0';
-	lgdb_log(LOG_DBG, "read from gdb %s\n", buf);
+	lgdb_log(LOG_DBG, "read from gdb \"%s\"\n", buf);
 
 	if (!response) {
 		free(buf);
@@ -104,17 +107,9 @@ static void send_command(char * command, bool should_respond, char * response)
 		wait_for_response(response);
 }
 //--------------------------------------------------------------------------------
-static size_t calc_max_num_events()
-{
-	return PROF_MAX_WALLETS * PROF_MAX_SCOPES * 2;
-}
-//--------------------------------------------------------------------------------
 void gdb_init(char *kernel, char *pts)
 {
 	gdb_enabled = false;
-
-	if (!hcreate(calc_max_num_events()))
-		exit(-1);
 
         if (access(kernel, F_OK) == -1) {
                 fprintf(lgdb_stderr, "LgDb:  kernel binary %s does not exists.\n", kernel);
@@ -129,27 +124,22 @@ void gdb_init(char *kernel, char *pts)
 	gdb_start(kernel, pts);
 }
 //--------------------------------------------------------------------------------
-static const char * parse_gdb_event(const char * line)
+static int extract_bp_number(const char * line)
 {
-	char * name = strchr(line, ')');
-	name += 2;
-	assert(!strncmp(name, "at", 2));
-	name += 3;
+	char * bp_start = NULL;
+	char * bp_end = NULL;
 
-	return name;
-}
-//--------------------------------------------------------------------------------
-static struct gdb_event * get_gdb_event(const char *name)
-{
-	ENTRY e, *ep = NULL;
-	
-	e.key = (void *)name;
-	ep = hsearch(e, FIND);
+	assert(line);
+	assert(!strncmp(line, "Breakpoint ", strlen("Breakpoint ")));
 
-	if (!ep)
-		return NULL;
+	bp_start = (char *)line + strlen("Breakpoint "); 	
+	bp_end = bp_start;
+	while (isdigit(*bp_end))
+		++bp_end;
 
-	return ep->data;
+	*bp_end = '\0';
+
+	return atoi(bp_start);
 }
 //--------------------------------------------------------------------------------
 //TODO: add SIGCLD handler
@@ -238,44 +228,49 @@ void gdb_close()
 void gdb_continue()
 {
 	char response[512];
-	const char * name = NULL;
+	unsigned int bp = 0;
 	struct gdb_event * event = NULL;
+	int (* callback)(void * data) = NULL;
 
 	send_command("c", true, response);
 
-	name = parse_gdb_event(response);
-	lgdb_log(LOG_DBG, "got an event on %s\n", event->name);
-
-	event = get_gdb_event(name);
-	if (!event)
+	bp = extract_bp_number(response);
+	if (bp < 1 || bp > MAX_BP) {
+		lgdb_log(LOG_DBG, "got an invalid event, reponse %s\n", response);
 		return;
+	}
+	 
+	callback = bp_to_callback[bp];
+	assert(callback);
 
-	event->callback(event->data);
+	callback(event->data);
 }
 //--------------------------------------------------------------------------------
-int gdb_add_event(struct gdb_event * event)
+int gdb_add_event(struct gdb_event * event, char * start, char * end)
 {
 	char command[512];
 	char response[512];
-	ENTRY e, * ep;
 
-	if (!event)
+	if (!event || ! start || !end)
 		return -1;
 
 	memset(command, 0, sizeof(command));
-	sprintf(command, "b %s", event->name);
+	sprintf(command, "b %s", start);
 	send_command(command, true, response);
+	if ((event->bp_start = extract_bp_number(response)) < 1)
+		return -1; 
 
-	strcpy(event->name, parse_gdb_event(response));
-	e.key = event->name;
-	e.data = (void *)event;
-	ep = hsearch(e, ENTER);
-	if (!ep) {
-		lgdb_log(LOG_ERR, "failed to add event %s\n", event->name);
-		return -1;
-	}
+	bp_to_callback[event->bp_start] = event->start_callback;
 
-	lgdb_log(LOG_DBG, "added an event on %s\n", event->name);
+	memset(command, 0, sizeof(command));
+	sprintf(command, "b %s", end);
+	send_command(command, true, response);
+	if ((event->bp_end = extract_bp_number(response)) < 1)
+		return -1; 
+
+	bp_to_callback[event->bp_end] = event->end_callback;
+
+	lgdb_log(LOG_DBG, "added the event \"%s\" with start at bp %s, end at bp %s\n", event->name, start, end);
 	return 0;
 }
 //--------------------------------------------------------------------------------
@@ -296,3 +291,4 @@ void gdb_send_command(char * command)
 
 	fprintf(lgdb_stdout, "%s\n", response);
 }
+//--------------------------------------------------------------------------------

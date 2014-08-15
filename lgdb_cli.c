@@ -116,8 +116,8 @@ static void lgdb_cli_prof(int argc, char **argv, int is_stdin)
 	if (is_number(argv[0])) {
 		int wallet = atoi(argv[0]);
 
-		if (argc == 3) {
-			prof_add_scope(wallet, argv[1], argv[2]);
+		if (argc == 4) {
+			prof_add_scope(wallet, argv[1], argv[2], argv[3]);
 			return; 
 		}
 
