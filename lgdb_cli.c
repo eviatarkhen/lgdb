@@ -52,8 +52,8 @@ struct cmd_list_element *cmdlist;
 //char *saved_command_line;
 //int saved_command_line_size = 100;
 
-void
-add_cmd(char *name, void (*func) (int, char **,int), char *doc, struct cmd_list_element **list)
+//-----------------------------------------------------------------
+void add_cmd(char *name, void (*func) (int, char **,int), char *doc, struct cmd_list_element **list)
 {
 	struct cmd_list_element *c = (struct cmd_list_element *) malloc(sizeof(struct cmd_list_element));
 	struct cmd_list_element *p;
@@ -79,7 +79,7 @@ add_cmd(char *name, void (*func) (int, char **,int), char *doc, struct cmd_list_
 	c->doc  = doc;
 	c->function = func;
 }
-
+//-----------------------------------------------------------------
 static bool is_number(char *str)
 {
 	size_t len;
@@ -95,12 +95,12 @@ static bool is_number(char *str)
 
 	return (i == len) ? true : false;
 }
-
+//-----------------------------------------------------------------
 void lgdb_quit(int argc, char **argv, int i)
 {
 	exit(0);
 }
-
+//-----------------------------------------------------------------
 static void lgdb_cli_prof(int argc, char **argv, int is_stdin)
 {
 	if (!strcmp(argv[0], "create")) {
@@ -125,11 +125,16 @@ static void lgdb_cli_prof(int argc, char **argv, int is_stdin)
 			prof_start(wallet);
 			return;
 		}
+
+		if (!strcmp(argv[1], "stop")) {
+			prof_stop(wallet);
+			return;
+		}
 	}
 
 	fprintf(lgdb_stdout, "Undefined command for profiler\n");
 }
-
+//-----------------------------------------------------------------
 static void lgdb_cli_gdb(int argc, char **argv, int is_stdin)
 {
 	int i;
@@ -144,9 +149,8 @@ static void lgdb_cli_gdb(int argc, char **argv, int is_stdin)
 
 	gdb_send_command(command);
 }
-
-void
-init_cli_cmds(void)
+//-----------------------------------------------------------------
+static void init_cli_cmds(void)
 {
 	cmdlist = NULL;
 	add_cmd("quit", lgdb_quit, "quit lgdb", &cmdlist);
@@ -154,11 +158,15 @@ init_cli_cmds(void)
 	add_cmd("profile", lgdb_cli_prof, "lgdb profiler", &cmdlist);
 	add_cmd("prof", lgdb_cli_prof, "lgdb profiler", &cmdlist);
 	add_cmd("p", lgdb_cli_prof, "lgdb profiler", &cmdlist);
-	add_cmd("gdb", lgdb_cli_gdb, "lgdb gdb hellper", &cmdlist);
+	add_cmd("gdb", lgdb_cli_gdb, "lgdb gdb helper", &cmdlist);
 }
-
-static void
-display_lgdb_prompt(char *display)
+//-----------------------------------------------------------------
+void cli_init(void)
+{
+	init_cli_cmds();
+}
+//-----------------------------------------------------------------
+static void display_lgdb_prompt(char *display)
 {
 	if (display)
 		fprintf(lgdb_stdout, "%s", display);
@@ -166,10 +174,9 @@ display_lgdb_prompt(char *display)
 		fprintf(lgdb_stdout, "%s", LGDB_PROMPT);
 	fflush (lgdb_stdout);	
 }
-
+//-----------------------------------------------------------------
 // returns the length of the command part, i.e not including arguments
-static int
-get_command_length(const char *text)
+static int get_command_length(const char *text)
 {
 	const char *p = text;
 
@@ -178,7 +185,7 @@ get_command_length(const char *text)
 	
 	return p - text;
 }
-
+//-----------------------------------------------------------------
 static struct cmd_list_element *
 find_cmd(char *command, int len, struct cmd_list_element *clist)
 {
@@ -191,7 +198,7 @@ find_cmd(char *command, int len, struct cmd_list_element *clist)
 
 	return found;
 }
-
+//-----------------------------------------------------------------
 static struct cmd_list_element *
 lookup_cmd(char **line, struct cmd_list_element *clist)
 {
@@ -229,9 +236,8 @@ lookup_cmd(char **line, struct cmd_list_element *clist)
 
 	return found;
 }
-
-static void
-delimit_args(char *line, int *argc, char **argv)
+//-----------------------------------------------------------------
+static void delimit_args(char *line, int *argc, char **argv)
 {
 	int count = 0;
 
@@ -252,9 +258,8 @@ delimit_args(char *line, int *argc, char **argv)
 	}
 	*argc = count;
 }
-
-static void
-execute_command(char *line, int from_stdin)
+//-----------------------------------------------------------------
+static void execute_command(char *line, int from_stdin)
 {
 	struct cmd_list_element *c;
 
@@ -270,15 +275,13 @@ execute_command(char *line, int from_stdin)
 		c->function(argc, argv, from_stdin);
 	}
 }
-
-
+//-----------------------------------------------------------------
 // handle a command line
 // if the command ends with '\' read another command line
 // if the line is emply do nothing
 // ignore spaces
 // if starts with '#' handle as a comment
-static void
-command_line_handler(char *rl)
+static void command_line_handler(char *rl)
 {
 	static char *linebuffer = 0;
 	static unsigned linelength = 0;
@@ -386,10 +389,9 @@ command_line_handler(char *rl)
 	display_lgdb_prompt (0);
 	return;
 }
-
+//-----------------------------------------------------------------
 // read chars until \n or EOF
-static void
-lgdb_readline(void)
+static void lgdb_readline(void)
 {
 	int c;
 	char *line;
@@ -429,10 +431,9 @@ lgdb_readline(void)
 	line[input_offset++] = '\0';
 	command_line_handler(line);
 }
-
+//-----------------------------------------------------------------
 // cli main loop: wait for events on stdin
-static void
-start_event_loop(void)
+static void start_event_loop(void)
 {
 	while (1) {
 		int instream_fd = fileno(instream);
@@ -451,10 +452,10 @@ start_event_loop(void)
 		lgdb_readline();	
 	}
 }
-
-void
-cli_command_loop(void)
+//-----------------------------------------------------------------
+void cli_command_loop(void)
 {
         display_lgdb_prompt(0);
 	start_event_loop();
 }
+//-----------------------------------------------------------------

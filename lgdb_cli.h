@@ -20,6 +20,6 @@
 #define LGDB_CLI_H
 
 extern void cli_command_loop(void);
-extern void init_cli_cmds(void);
+extern void cli_init(void);
 
 #endif 

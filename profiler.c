@@ -20,10 +20,13 @@
 #include <sys/time.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
 
 #include "profiler.h"
 #include "gdb.h"
 #include "defs.h"
+
+bool active_profiling;
 
 typedef struct prof_scope
 {
@@ -44,6 +47,7 @@ typedef struct wallet
 
 static wallet_t wallets[PROF_MAX_WALLETS];
 static int num_of_wallets;
+static pthread_t prof_thread;
 //----------------------------------------------------------------------------------
 static int start_charge_cb(void *data)
 {
@@ -53,7 +57,6 @@ static int start_charge_cb(void *data)
 
 	return 0;
 }
-
 //----------------------------------------------------------------------------------
 static int end_charge_cb(void *data)
 {
@@ -63,6 +66,10 @@ static int end_charge_cb(void *data)
 
 	if (!scope)
 		return -1;
+
+        // we can get to the end of the scope before we did a start charge
+        if (!scope->start_time.tv_sec)
+		return 0;
 
 	gettimeofday(&tv, NULL);
 
@@ -77,6 +84,7 @@ static int end_charge_cb(void *data)
 void prof_init()
 {
 	memset(wallets, 0, sizeof(wallets));
+	active_profiling = false;
 }
 //----------------------------------------------------------------------------------
 int prof_create_wallet(char *name)
@@ -147,6 +155,8 @@ int prof_add_scope(int wallet, char * name, char * start, char * end)
 	for (i = 0; i < PROF_MAX_SCOPES  && (w->scopes)[i].used ; ++i);
 
 	w->scopes[i].used = 1;
+	w->scopes[i].charge = 0;
+        memset(&(w->scopes[i].start_time), 0, sizeof(struct timeval));
 	++(w->num_of_scopes);
 
 	event = &(w->scopes[i].event);
@@ -184,9 +194,25 @@ int prof_remove_scope(int wallet, int scope)
 	return 0;
 }
 //----------------------------------------------------------------------------------
-void prof_start()
+void * do_profile(void * arg)
 {
-	gdb_continue();
+	while (true) {
+		gdb_continue();
+		if (!active_profiling)
+			break;
+	}
+
+	return NULL;
+}
+//----------------------------------------------------------------------------------
+void prof_start(int wallet)
+{
+	pthread_create(&prof_thread, NULL, do_profile, NULL);
+}
+//----------------------------------------------------------------------------------
+void prof_stop(int wallet)
+{
+	active_profiling = false;
 }
 //----------------------------------------------------------------------------------
 unsigned long long prof_get_charge(int wallet)

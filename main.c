@@ -121,10 +121,10 @@ captured_main(void *data)
 
 	print_lgdb_version();
 	
-	init_cli_cmds();
+	gdb_init(kernel, pts);
+	cli_init();
 	logger_init();
 	prof_init();
-	gdb_init(kernel, pts);
 
 	start_cli();
 

@@ -27,7 +27,8 @@ extern int prof_delete_wallet(int wallet);
 extern int prof_add_scope(int wallet, char * name, char * start, char * end);
 extern int prof_remove_scope(int wallet, int scope);
 
-extern void prof_start();
+extern void prof_start(int wallet);
+extern void prof_stop(int wallet);
 
 extern unsigned long long prof_get_charge(int wallet);
 #endif 
