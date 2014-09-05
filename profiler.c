@@ -32,6 +32,7 @@ typedef struct prof_scope
 {
 	unsigned int used;
 	unsigned long long charge;
+	unsigned int num_of_entrances;
 	struct timeval start_time;
 	struct gdb_event start_event;
 	struct gdb_event end_event;
@@ -77,6 +78,7 @@ static int end_charge_cb(void *data)
 
 	elapsed = tv.tv_sec * 1000000 + tv.tv_usec - scope->start_time.tv_sec * 1000000 + scope->start_time.tv_usec; 
 	scope->charge += elapsed;
+	scope->num_of_entrances += 1;
 
 	lgdb_log(LOG_DBG, "profiling end event on scope %s elapsed %llu\n", scope->name, elapsed);
 
@@ -163,6 +165,7 @@ int prof_add_scope(int wallet, char * name, char * start, char * end)
 
 	w->scopes[i].used = 1;
 	w->scopes[i].charge = 0;
+	w->scopes[i].num_of_entrances = 0;
         memset(&(w->scopes[i].start_time), 0, sizeof(struct timeval));
 	strcpy(w->scopes[i].name, name);
 	++(w->num_of_scopes);
@@ -212,33 +215,47 @@ void * do_profile(void * arg)
 {
 	while (true) {
 		gdb_continue();
-		if (!active_profiling)
+		if (!active_profiling) {
+			lgdb_log(LOG_DBG, "profiling ended\n");
 			break;
+		}
 	}
 
 	return NULL;
 }
 //----------------------------------------------------------------------------------
-void prof_start(int wallet)
+void prof_start(int wallet_id)
 {
+	active_profiling  = true;
 	pthread_create(&prof_thread, NULL, do_profile, NULL);
 }
 //----------------------------------------------------------------------------------
-void prof_stop(int wallet)
+void prof_stop(int wallet_id)
 {
 	active_profiling = false;
 }
 //----------------------------------------------------------------------------------
-unsigned long long prof_get_charge(int wallet)
+void prof_report(int wallet_id)
 {
+	wallet_t * wallet = &wallets[wallet_id];
 	int i;
-	unsigned long long charge = 0;
 
-	for (i = 0; i < PROF_MAX_SCOPES; ++i) {
-		if (wallets[i].used)
-			charge += wallets[i].charge;
+	if (!wallet->used) {
+		fprintf(lgdb_stdout, "wallet %s not in use\n", wallet->name);
+		return;
 	}
 
-	return charge;
+	fprintf(lgdb_stdout, "Profile Report of wallet %s: \n", wallet->name);
+	for (i = 0; i < PROF_MAX_SCOPES; ++i) {
+		prof_scope_t * scope = &wallet->scopes[i];
+		if (!scope->used)
+			continue;
+
+		wallet->charge += scope->charge;
+		fprintf(lgdb_stdout, "Scope %s: charged: %llu usecs\t average: %f\t entrences: %u\n",
+			scope->name, scope->charge, (double)scope->charge / scope->num_of_entrances, scope->num_of_entrances);
+	}
+	fprintf(lgdb_stdout, "Total charge: %llu\n", wallet->charge);
+
 }
 //----------------------------------------------------------------------------------

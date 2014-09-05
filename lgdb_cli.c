@@ -130,6 +130,11 @@ static void lgdb_cli_prof(int argc, char **argv, int is_stdin)
 			prof_stop(wallet);
 			return;
 		}
+
+		if (!strcmp(argv[1], "report")) {
+			prof_report(wallet);
+			return;
+		}
 	}
 
 	fprintf(lgdb_stdout, "Undefined command for profiler\n");

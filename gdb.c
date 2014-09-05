@@ -219,9 +219,19 @@ void gdb_close()
 	kill(pid, SIGTERM);
 }
 //--------------------------------------------------------------------------------
+char * remove_bp_prefix(char * line)
+{
+	int i;
+	assert(line);
+	
+	for (i = 0; line[i] != '\0' && strncmp(&line[i], "Breakpoint", strlen("Breakpoint")); ++i);
+
+	return line + i;
+}
+//--------------------------------------------------------------------------------
 void gdb_continue()
 {
-	static const char * CONTINUING_STR = "Continuing.\n\n";
+	static const char * CONTINUING_STR = "Continuing.\n";
 	char command[10] = "c";
 	char response[512];
 	char * bp_start;
@@ -230,7 +240,7 @@ void gdb_continue()
 
 	send_command(command, true, response);
 	assert(!strncmp(response, CONTINUING_STR, strlen(CONTINUING_STR)));
-	bp_start = response + strlen(CONTINUING_STR);
+	bp_start = remove_bp_prefix(response + strlen(CONTINUING_STR));
 
 	bp = extract_bp_number(bp_start);
 	if (bp < 1 || bp > MAX_BP) {
