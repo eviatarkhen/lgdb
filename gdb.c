@@ -57,25 +57,21 @@ static size_t wait_for_response(char * response)
 		}
 	}
 		
-	do
-	{
+	while (true)  {
 		bytes_read = read(outfd[0], buf + bytes_read_total, 1000);
-		if (bytes_read == -1) {
-			if (errno != EAGAIN) {
-				perror("read");
-				exit(-10);
-			}
-			else {
-				if (!bytes_read_total) {
-					usleep(100);
-					continue;
-				}
-				break;
-			}
+		if (bytes_read < 0) {
+			perror("read");
+			if (!response) 
+				free(buf);
+			exit(-10);
 		}
+
 		bytes_read_total += bytes_read;
+
+		// keep reading until we get (gdb)
+		if (!strncmp(buf + bytes_read_total - strlen("(gdb) "), "(gdb) ", strlen("(gdb) ")))
+			break;
 	}
-	while (bytes_read > 0);
 
 	buf[bytes_read_total] = '\0';
 	lgdb_log(LOG_DBG, "read from gdb \"%s\"\n", buf);
@@ -201,8 +197,6 @@ static void gdb_start(char *kernel, char *pts)
 	sleep(5);
 	char command[1000];
 
-	fcntl(outfd[0], F_SETFL, O_NONBLOCK);
-
 	wait_for_response(NULL);
 
 	memset(command, 0, sizeof(command));
@@ -227,16 +221,21 @@ void gdb_close()
 //--------------------------------------------------------------------------------
 void gdb_continue()
 {
+	static const char * CONTINUING_STR = "Continuing.\n\n";
+	char command[10] = "c";
 	char response[512];
+	char * bp_start;
 	unsigned int bp = 0;
 	struct gdb_event * event = NULL;
 	int (* callback)(void * data) = NULL;
 
-	send_command("c", true, response);
+	send_command(command, true, response);
+	assert(!strncmp(response, CONTINUING_STR, strlen(CONTINUING_STR)));
+	bp_start = response + strlen(CONTINUING_STR);
 
-	bp = extract_bp_number(response);
+	bp = extract_bp_number(bp_start);
 	if (bp < 1 || bp > MAX_BP) {
-		lgdb_log(LOG_DBG, "got an invalid event, reponse %s\n", response);
+		lgdb_log(LOG_DBG, "got an invalid event, reponse %s\n", bp_start);
 		return;
 	}
 	 

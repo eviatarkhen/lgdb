@@ -66,4 +66,5 @@ void lgdb_log(log_type type, const char *format, ...)
 	va_start(args, format);
 	vfprintf(log_file, format, args);
 	va_end(args);
+	fflush(log_file);
 }
