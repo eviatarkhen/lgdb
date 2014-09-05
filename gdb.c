@@ -34,7 +34,7 @@
 
 static int outfd[2];
 static int infd[2];
-static void * bp_to_callback[MAX_BP];
+static void * bp_to_event[MAX_BP];
 
 static pid_t pid;
 static bool gdb_enabled;
@@ -227,7 +227,6 @@ void gdb_continue()
 	char * bp_start;
 	unsigned int bp = 0;
 	struct gdb_event * event = NULL;
-	int (* callback)(void * data) = NULL;
 
 	send_command(command, true, response);
 	assert(!strncmp(response, CONTINUING_STR, strlen(CONTINUING_STR)));
@@ -239,37 +238,29 @@ void gdb_continue()
 		return;
 	}
 	 
-	callback = bp_to_callback[bp];
-	assert(callback);
+	event = bp_to_event[bp];
+	assert(event);
 
-	callback(event->data);
+	event->callback(event->data);
 }
 //--------------------------------------------------------------------------------
-int gdb_add_event(struct gdb_event * event, char * start, char * end)
+int gdb_add_event(struct gdb_event * event, char * line)
 {
 	char command[512];
 	char response[512];
 
-	if (!event || ! start || !end)
+	if (!event || ! line)
 		return -1;
 
 	memset(command, 0, sizeof(command));
-	sprintf(command, "b %s", start);
+	sprintf(command, "b %s", line);
 	send_command(command, true, response);
-	if ((event->bp_start = extract_bp_number(response)) < 1)
+	if ((event->break_point = extract_bp_number(response)) < 1)
 		return -1; 
 
-	bp_to_callback[event->bp_start] = event->start_callback;
+	bp_to_event[event->break_point] = event;
 
-	memset(command, 0, sizeof(command));
-	sprintf(command, "b %s", end);
-	send_command(command, true, response);
-	if ((event->bp_end = extract_bp_number(response)) < 1)
-		return -1; 
-
-	bp_to_callback[event->bp_end] = event->end_callback;
-
-	lgdb_log(LOG_DBG, "added the event \"%s\" with start at bp %s, end at bp %s\n", event->name, start, end);
+	lgdb_log(LOG_DBG, "added event with break point number \"%d\" on line %s\n", event->break_point, line);
 	return 0;
 }
 //--------------------------------------------------------------------------------

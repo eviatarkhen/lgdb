@@ -33,7 +33,9 @@ typedef struct prof_scope
 	unsigned int used;
 	unsigned long long charge;
 	struct timeval start_time;
-	struct gdb_event event;
+	struct gdb_event start_event;
+	struct gdb_event end_event;
+	char name[512];
 } prof_scope_t;
 
 typedef struct wallet
@@ -53,7 +55,7 @@ static int start_charge_cb(void *data)
 {
 	prof_scope_t *scope = (prof_scope_t *)data;
 	gettimeofday(&(scope->start_time), NULL);
-	lgdb_log(LOG_DBG, "profiling start event on scope %s \n", scope->event.name);
+	lgdb_log(LOG_DBG, "profiling start on scope %s \n", scope->name);
 
 	return 0;
 }
@@ -76,7 +78,7 @@ static int end_charge_cb(void *data)
 	elapsed = tv.tv_sec * 1000000 + tv.tv_usec - scope->start_time.tv_sec * 1000000 + scope->start_time.tv_usec; 
 	scope->charge += elapsed;
 
-	lgdb_log(LOG_DBG, "profiling end event on scope %s elapsed %llu\n", scope->event.name, elapsed);
+	lgdb_log(LOG_DBG, "profiling end event on scope %s elapsed %llu\n", scope->name, elapsed);
 
 	return 0;
 }
@@ -131,7 +133,7 @@ int prof_add_scope(int wallet, char * name, char * start, char * end)
 	struct gdb_event * event;
 
 	if (wallet < 0 || wallet >= PROF_MAX_WALLETS) {
-		fprintf(lgdb_stdout, "Invalid wallet %d\n", wallet);
+		lgdb_log(LOG_ERR, "Invalid wallet %d\n", wallet);
 		return -1;
 	}
 	
@@ -143,12 +145,17 @@ int prof_add_scope(int wallet, char * name, char * start, char * end)
 	}
 
 	if (w->num_of_scopes == PROF_MAX_SCOPES) {
-		fprintf(lgdb_stdout, "Reached the maximun number of scopes for wallet %d\n", PROF_MAX_SCOPES);
+		lgdb_log(LOG_ERR, "Reached the maximun number of scopes for wallet %d\n", PROF_MAX_SCOPES);
+		return -1;
+	}
+
+	if (!name) {
+		lgdb_log(LOG_ERR, "Invalid name\n");
 		return -1;
 	}
 
 	if (!start || !end) {
-		fprintf(lgdb_stdout, "Invalid scope\n");
+		lgdb_log(LOG_ERR, "Invalid scope line\n");
 		return -1;
 	}
 
@@ -157,16 +164,22 @@ int prof_add_scope(int wallet, char * name, char * start, char * end)
 	w->scopes[i].used = 1;
 	w->scopes[i].charge = 0;
         memset(&(w->scopes[i].start_time), 0, sizeof(struct timeval));
+	strcpy(w->scopes[i].name, name);
 	++(w->num_of_scopes);
 
-	event = &(w->scopes[i].event);
-	event->name = name;
+	event = &(w->scopes[i].start_event);
         event->data = &w->scopes[i];
-        event->start_callback = start_charge_cb;
-        event->end_callback = end_charge_cb;
+        event->callback = start_charge_cb;
 
 	// TODO handle fail
-	gdb_add_event(event, start, end);
+	gdb_add_event(event, start);
+
+	event = &(w->scopes[i].end_event);
+        event->data = &w->scopes[i];
+        event->callback = end_charge_cb;
+
+	// TODO handle fail
+	gdb_add_event(event, end);
 
 	fprintf(lgdb_stdout, "Add scope #%d to wallet %s.\nStart: %s\nEnd: %s\n", i, w->name, start, end);
 	return i;
@@ -189,7 +202,8 @@ int prof_remove_scope(int wallet, int scope)
 
 	w->scopes[scope].used = 0;
 
-	gdb_remove_event(&(w->scopes[scope].event));
+	gdb_remove_event(&(w->scopes[scope].start_event));
+	gdb_remove_event(&(w->scopes[scope].end_event));
 
 	return 0;
 }
